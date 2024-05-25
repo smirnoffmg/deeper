@@ -24,8 +24,8 @@ import (
 )
 
 func init() {
- g := NewPlugin()
- g.Register()
+ p := NewPlugin()
+ p.Register()
 }
 
 type NewPlugin struct {}
@@ -35,8 +35,9 @@ func NewPlugin() *NewPlugin {
 }
 
 func (g *NewPlugin) Register() error {
- plugins := state.ActivePlugins[entities.Username]
- state.ActivePlugins[entities.Username] = append(plugins, g)
+ pluginEntityType := entities.Username  // for example, better use proper EntityType
+ plugins := state.ActivePlugins[pluginEntityType]
+ state.ActivePlugins[pluginEntityType] = append(plugins, g)
 
  return nil
 }
@@ -47,7 +48,7 @@ func (g *NewPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) 
 
 }
 
-func (g GithubPlugin) String() string {
+func (g NewPlugin) String() string {
  return "NewPlugin"
 }
 
