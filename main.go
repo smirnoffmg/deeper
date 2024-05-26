@@ -14,6 +14,7 @@ import (
 	_ "github.com/smirnoffmg/deeper/internal/plugins/domain"
 	_ "github.com/smirnoffmg/deeper/internal/plugins/email"
 	_ "github.com/smirnoffmg/deeper/internal/plugins/ip_addr"
+	_ "github.com/smirnoffmg/deeper/internal/plugins/url"
 	_ "github.com/smirnoffmg/deeper/internal/plugins/username"
 	"github.com/smirnoffmg/deeper/internal/state"
 )
@@ -31,7 +32,15 @@ func checkTrace(trace entities.Trace) (result []entities.Trace) {
 				log.Error().Msgf("Error checking trace %v with plugin %v: %v", trace, plugin, err)
 				return
 			}
-			result = append(result, newTraces...)
+
+			// filter for empty values
+			for _, newTrace := range newTraces {
+				if newTrace.Value == "" {
+					continue
+				}
+				result = append(result, newTrace)
+			}
+
 		}(plugin)
 	}
 	wg.Wait()
