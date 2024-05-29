@@ -11,11 +11,10 @@ import (
 	"github.com/smirnoffmg/deeper/internal/entities"
 	"github.com/smirnoffmg/deeper/internal/plugins"
 
-	_ "github.com/smirnoffmg/deeper/internal/plugins/domain"
-	_ "github.com/smirnoffmg/deeper/internal/plugins/email"
-	_ "github.com/smirnoffmg/deeper/internal/plugins/ip_addr"
-	_ "github.com/smirnoffmg/deeper/internal/plugins/url"
-	_ "github.com/smirnoffmg/deeper/internal/plugins/username"
+	_ "github.com/smirnoffmg/deeper/internal/plugins/academic_papers"
+	_ "github.com/smirnoffmg/deeper/internal/plugins/coderepos"
+	_ "github.com/smirnoffmg/deeper/internal/plugins/facebook"
+	_ "github.com/smirnoffmg/deeper/internal/plugins/subdomains"
 	"github.com/smirnoffmg/deeper/internal/state"
 )
 

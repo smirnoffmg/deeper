@@ -72,7 +72,7 @@ func (g NewPlugin) String() string {
 - [ ] **Domain -> SOA Records**
 - [ ] **Domain -> SPF Records**
 - [ ] **Domain -> SSL Certificates**
-- [ ] **Domain -> Subdomain Enumeration**
+- [x] **Domain -> Subdomain Enumeration**
 - [ ] **Domain -> Subdomain, IpAddr**
 - [ ] **Domain -> TXT Records**
 - [ ] **Domain -> Web Technologies**
@@ -145,7 +145,7 @@ func (g NewPlugin) String() string {
 - [ ] **Subdomain -> SPF Records**
 - [ ] **Url -> Archived Pages**
 - [ ] **Url -> Domain, Subdomain**
-- [ ] **Username -> Code Repositories**
+- [x] **Username -> Code Repositories**
 - [ ] **Username -> Data Breaches**
 - [ ] **Username -> DeviantArt Profiles**
 - [ ] **Username -> Email Addresses**
@@ -163,7 +163,6 @@ func (g NewPlugin) String() string {
 - [ ] **Username -> Steam Profiles**
 - [ ] **Username -> Tumblr Profiles**
 - [ ] **Username -> Twitter Profiles**
-
 
 ## How to Contribute
 

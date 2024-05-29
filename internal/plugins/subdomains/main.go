@@ -10,7 +10,10 @@ import (
 	"github.com/smirnoffmg/deeper/internal/state"
 )
 
-type SubdomainPlugin struct{}
+const InputTraceType = entities.Domain
+
+type SubdomainPlugin struct {
+}
 
 func init() {
 	plugin := SubdomainPlugin{}
@@ -18,12 +21,12 @@ func init() {
 }
 
 func (p SubdomainPlugin) Register() error {
-	state.RegisterPlugin(entities.Domain, p)
+	state.RegisterPlugin(InputTraceType, p)
 	return nil
 }
 
 func (p SubdomainPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
-	if trace.Type != entities.Domain {
+	if trace.Type != InputTraceType {
 		return nil, nil
 	}
 

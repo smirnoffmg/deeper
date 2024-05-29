@@ -67,6 +67,7 @@ const (
 	DnsRecordPTR   TraceType = "dns_record_ptr"
 	DnsRecordSRV   TraceType = "dns_record_srv"
 	DnsRecordCAA   TraceType = "dns_record_caa"
+	Whois          TraceType = "whois"
 	// Network traces
 	Subdomain TraceType = "subdomain"
 	ASN       TraceType = "asn"
