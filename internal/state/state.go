@@ -6,3 +6,7 @@ import (
 )
 
 var ActivePlugins map[entities.TraceType][]plugins.DeeperPlugin = make(map[entities.TraceType][]plugins.DeeperPlugin)
+
+func RegisterPlugin(traceType entities.TraceType, plugin plugins.DeeperPlugin) {
+	ActivePlugins[traceType] = append(ActivePlugins[traceType], plugin)
+}
