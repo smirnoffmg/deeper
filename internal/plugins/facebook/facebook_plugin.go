@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/rs/zerolog/log"
 	"github.com/smirnoffmg/deeper/internal/entities"
 	"github.com/smirnoffmg/deeper/internal/state"
 )
@@ -14,7 +15,9 @@ const InputTraceType = entities.Username
 
 func init() {
 	p := NewPlugin()
-	p.Register()
+	if err := p.Register(); err != nil {
+		log.Error().Err(err).Msgf("Failed to register plugin %s", p)
+	}
 }
 
 type FacebookPlugin struct{}
