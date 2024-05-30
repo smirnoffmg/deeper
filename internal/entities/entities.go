@@ -1,8 +1,9 @@
 package entities
 
 import (
-	"log"
 	"regexp"
+
+	"github.com/rs/zerolog/log"
 )
 
 type TraceType string
@@ -43,17 +44,18 @@ const (
 	Certificates            TraceType = "certificates"
 	ConferenceParticipation TraceType = "conference_participation"
 	// Social media traces
-	Twitter   TraceType = "twitter"
-	Github    TraceType = "github"
-	Linkedin  TraceType = "linkedin"
-	Instagram TraceType = "instagram"
-	Facebook  TraceType = "facebook"
-	TikTok    TraceType = "tiktok"
-	Reddit    TraceType = "reddit"
-	YouTube   TraceType = "youtube"
-	Pinterest TraceType = "pinterest"
-	Snapchat  TraceType = "snapchat"
-	Tumblr    TraceType = "tumblr"
+	SocialGeneric TraceType = "social_generic"
+	Twitter       TraceType = "twitter"
+	Github        TraceType = "github"
+	Linkedin      TraceType = "linkedin"
+	Instagram     TraceType = "instagram"
+	Facebook      TraceType = "facebook"
+	TikTok        TraceType = "tiktok"
+	Reddit        TraceType = "reddit"
+	YouTube       TraceType = "youtube"
+	Pinterest     TraceType = "pinterest"
+	Snapchat      TraceType = "snapchat"
+	Tumblr        TraceType = "tumblr"
 	// Technical traces
 	Repository TraceType = "repository"
 	// DNS traces
@@ -222,7 +224,7 @@ func guessTraceType(value string) TraceType {
 	case isBitcoinAddress(value):
 		return BitcoinAddress
 	default:
-		log.Printf("Unknown trace type for value: %s", value)
+		log.Info().Msgf("Could not guess trace type for value %s, assuming it's username", value)
 		return Username
 	}
 }

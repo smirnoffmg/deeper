@@ -6,6 +6,7 @@ require (
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/rs/zerolog v1.33.0
 	github.com/texttheater/golang-levenshtein/levenshtein v0.0.0-20200805054039-cae8b0eaed6c
+	golang.org/x/exp v0.0.0-20240529005216-23cca8864a10
 )
 
 require (
