@@ -128,11 +128,6 @@ func isTwitterHandle(value string) bool {
 	return regexp.MustCompile(twitterRegex).MatchString(value)
 }
 
-func isGithubUsername(value string) bool {
-	githubRegex := `^[a-zA-Z0-9-]{1,39}$`
-	return regexp.MustCompile(githubRegex).MatchString(value)
-}
-
 func isLinkedinProfile(value string) bool {
 	linkedinRegex := `^https?://(www\.)?linkedin\.com/in/[a-zA-Z0-9-_]+/?$`
 	return regexp.MustCompile(linkedinRegex).MatchString(value)

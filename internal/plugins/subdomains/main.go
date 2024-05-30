@@ -17,7 +17,9 @@ type SubdomainPlugin struct {
 
 func init() {
 	plugin := SubdomainPlugin{}
-	plugin.Register()
+	if err := plugin.Register(); err != nil {
+		panic(err)
+	}
 }
 
 func (p SubdomainPlugin) Register() error {
