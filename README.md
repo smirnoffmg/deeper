@@ -1,11 +1,11 @@
 # Deeper
 
 ```
-██████  ███████ ███████ ██████  ███████ ██████  
-██   ██ ██      ██      ██   ██ ██      ██   ██ 
-██   ██ █████   █████   ██████  █████   ██████  
-██   ██ ██      ██      ██      ██      ██   ██ 
-██████  ███████ ███████ ██      ███████ ██   ██ 
+██████  ███████ ███████ ██████  ███████ ██████
+██   ██ ██      ██      ██   ██ ██      ██   ██
+██   ██ █████   █████   ██████  █████   ██████
+██   ██ ██      ██      ██      ██      ██   ██
+██████  ███████ ███████ ██      ███████ ██   ██
 ```
 
 Deeper is an OSINT (Open Source Intelligence) tool designed to help users gather information from various online sources. The tool operates based on the concept of "traces." Each trace represents a piece of information such as an email, phone number, domain, or username. The tool leverages plugins to follow these traces, discovering new traces along the way. Each plugin specializes in processing a specific type of trace and produces new traces based on the input. This modular approach allows for easy extension and customization of the tool to suit various OSINT needs.
