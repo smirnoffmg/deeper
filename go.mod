@@ -1,6 +1,6 @@
 module github.com/smirnoffmg/deeper
 
-go 1.22.3
+go 1.22
 
 require (
 	github.com/olekukonko/tablewriter v0.0.5
