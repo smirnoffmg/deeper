@@ -1,0 +1,25 @@
+@startuml Sequence
+actor User
+
+participant "Deeper" as Deeper
+participant "State" as State
+participant "Trace" as Trace
+participant "Plugin: SubdomainPlugin" as SubdomainPlugin
+participant "Plugin: WhoisPlugin" as WhoisPlugin
+
+User -> Deeper: Create Trace (example.com)
+Deeper -> Trace: NewTrace("example.com")
+
+User -> Deeper: Start Processing
+Deeper -> State: Get Plugins for TraceType (Domain)
+State -> Deeper: Return [SubdomainPlugin, WhoisPlugin]
+
+Deeper -> SubdomainPlugin: FollowTrace(Trace)
+SubdomainPlugin -> Deeper: Return [Subdomain Trace(s)]
+
+Deeper -> WhoisPlugin: FollowTrace(Trace)
+WhoisPlugin -> Deeper: Return [Whois Trace]
+
+Deeper -> User: Display New Traces
+
+@enduml

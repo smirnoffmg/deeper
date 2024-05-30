@@ -1,0 +1,10 @@
+@startuml Component
+package "Deeper" {
+    [Core] --> [Plugin Interface]
+    [Plugin Interface] <|-- [SubdomainPlugin]
+    [Plugin Interface] <|-- [WhoisPlugin]
+    [Core] --> [State Management]
+    [State Management] --> [Database]
+    [Core] --> [External API Handler]
+}
+@enduml

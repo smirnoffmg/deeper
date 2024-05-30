@@ -1,0 +1,15 @@
+@startuml Usecase
+actor User
+actor ExternalService
+
+User -> (Create Trace)
+User -> (Start Processing)
+User -> (View Results)
+
+ExternalService -> (Fetch Data)
+
+(User) -- (Create Trace)
+(User) -- (Start Processing)
+(User) -- (View Results)
+(ExternalService) -- (Fetch Data)
+@enduml

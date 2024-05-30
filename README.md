@@ -8,7 +8,41 @@
 ██████  ███████ ███████ ██      ███████ ██   ██ 
 ```
 
-Deeper is an easy-to-use OSINT tool that leverages plugins to expand its capabilities.
+Deeper is an OSINT (Open Source Intelligence) tool designed to help users gather information from various online sources. The tool operates based on the concept of "traces." Each trace represents a piece of information such as an email, phone number, domain, or username. The tool leverages plugins to follow these traces, discovering new traces along the way. Each plugin specializes in processing a specific type of trace and produces new traces based on the input. This modular approach allows for easy extension and customization of the tool to suit various OSINT needs.
+
+## Sequence Diagram
+
+![sequence diagram](docs/images/docs/Sequence.svg)
+
+## Architecture overview
+
+![architecture overview](docs/images/docs/Architecture.svg)
+
+## How to Contribute
+
+We welcome contributions from the community to help improve Deeper!
+
+1. __Fork the Repository__:
+   - Click the "Fork" button at the top right of the repository page.
+
+2. __Create a New Branch__:
+   - Clone your forked repository locally: `git clone https://github.com/your-username/deeper.git`
+   - Create a new branch for your feature or bug fix: `git checkout -b feature-branch`
+
+3. __Add Your Plugin Code__:
+   - Add your new plugin code following the provided example.
+
+4. __Commit Your Changes__:
+   - Commit your changes with a descriptive message: `git commit -am 'Add new plugin'`
+
+5. __Push to Your Branch__:
+   - Push your changes to GitHub: `git push origin feature-branch`
+
+6. __Create a New Pull Request__:
+   - Go to the original repository and click the "New Pull Request" button.
+   - Choose your branch and submit the pull request for review.
+
+Thank you for your contributions!
 
 ## Plugin Example
 
@@ -60,32 +94,6 @@ func (g NewPlugin) String() string {
     return "NewPlugin"
 }
 ```
-
-## How to Contribute
-
-We welcome contributions from the community to help improve Deeper!
-
-1. __Fork the Repository__:
-   - Click the "Fork" button at the top right of the repository page.
-
-2. __Create a New Branch__:
-   - Clone your forked repository locally: `git clone https://github.com/your-username/deeper.git`
-   - Create a new branch for your feature or bug fix: `git checkout -b feature-branch`
-
-3. __Add Your Plugin Code__:
-   - Add your new plugin code following the provided example.
-
-4. __Commit Your Changes__:
-   - Commit your changes with a descriptive message: `git commit -am 'Add new plugin'`
-
-5. __Push to Your Branch__:
-   - Push your changes to GitHub: `git push origin feature-branch`
-
-6. __Create a New Pull Request__:
-   - Go to the original repository and click the "New Pull Request" button.
-   - Choose your branch and submit the pull request for review.
-
-Thank you for your contributions!
 
 ## To-do list
 

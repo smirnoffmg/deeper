@@ -1,0 +1,54 @@
+@startuml Architecture
+
+package "Deeper" {
+    
+    class Trace {
+        +Value: string
+        +Type: TraceType
+        +String(): string
+    }
+
+    enum TraceType {
+        Email
+        Phone
+        Domain
+        Username
+        Subdomain
+        Whois
+        // Add other trace types as needed
+    }
+
+    interface DeeperPlugin {
+        +Register(): error
+        +FollowTrace(trace: Trace): Trace[]
+        +String(): string
+    }
+
+    class SubdomainPlugin {
+        +Register(): error
+        +FollowTrace(trace: Trace): Trace[]
+        +String(): string
+    }
+
+    class WhoisPlugin {
+        +Register(): error
+        +FollowTrace(trace: Trace): Trace[]
+        +String(): string
+    }
+
+    SubdomainPlugin --|> DeeperPlugin
+    WhoisPlugin --|> DeeperPlugin
+
+    Trace --> "1" TraceType
+    Trace --> "1..*" DeeperPlugin
+
+    class State {
+        +ActivePlugins: map<TraceType, DeeperPlugin[]>
+        +RegisterPlugin(traceType: TraceType, plugin: DeeperPlugin)
+    }
+
+    Trace --> State
+    DeeperPlugin --> State
+}
+
+@enduml
