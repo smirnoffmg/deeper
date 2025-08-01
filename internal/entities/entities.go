@@ -20,6 +20,7 @@ const (
 	Company  TraceType = "company"
 	// Personal data
 	Alias                   TraceType = "alias"
+	DataBreach              TraceType = "data_breach"
 	DateOfBirth             TraceType = "date_of_birth"
 	Gender                  TraceType = "gender"
 	Nationality             TraceType = "nationality"
