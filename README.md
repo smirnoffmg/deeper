@@ -1,6 +1,6 @@
 # Deeper
 
-```
+```text
 ██████  ███████ ███████ ██████  ███████ ██████
 ██   ██ ██      ██      ██   ██ ██      ██   ██
 ██   ██ █████   █████   ██████  █████   ██████
@@ -10,198 +10,287 @@
 
 Deeper is an OSINT (Open Source Intelligence) tool designed to help users gather information from various online sources. The tool operates based on the concept of "traces." Each trace represents a piece of information such as an email, phone number, domain, or username. The tool leverages plugins to follow these traces, discovering new traces along the way. Each plugin specializes in processing a specific type of trace and produces new traces based on the input. This modular approach allows for easy extension and customization of the tool to suit various OSINT needs.
 
-## Sequence Diagram
+## 🚀 Features
 
-![sequence diagram](docs/images/docs/Sequence.svg)
+- **Modular Plugin Architecture**: Easy to extend with new plugins
+- **Concurrent Processing**: Efficient parallel trace processing
+- **Comprehensive Error Handling**: Structured error types and logging
+- **Configuration Management**: Environment-based configuration
+- **Test Coverage**: Comprehensive unit tests
+- **Rate Limiting**: Built-in HTTP rate limiting and retry logic
+- **Structured Logging**: JSON-based logging with configurable levels
 
-## Architecture overview
+## 🏗️ Architecture
 
-![architecture overview](docs/images/docs/Architecture.svg)
+The project follows SOLID principles and clean architecture patterns:
 
-## How to Contribute
+### Core Components
 
-We welcome contributions from the community to help improve Deeper!
+- **Engine**: Orchestrates the trace processing workflow
+- **Processor**: Handles concurrent trace processing through plugins
+- **Display**: Manages result presentation and formatting
+- **Config**: Centralized configuration management
+- **Errors**: Structured error handling and types
+- **HTTP**: Shared HTTP client with retry logic and rate limiting
 
-1. __Fork the Repository__:
-   - Click the "Fork" button at the top right of the repository page.
+### Plugin System
 
-2. __Create a New Branch__:
-   - Clone your forked repository locally: `git clone https://github.com/your-username/deeper.git`
-   - Create a new branch for your feature or bug fix: `git checkout -b feature-branch`
+Plugins implement the `DeeperPlugin` interface and are automatically discovered and registered. Each plugin specializes in processing specific trace types and can generate new traces.
 
-3. __Add Your Plugin Code__:
-   - Add your new plugin code following the provided example.
+## 📦 Installation
 
-4. __Commit Your Changes__:
-   - Commit your changes with a descriptive message: `git commit -am 'Add new plugin'`
+### Prerequisites
 
-5. __Push to Your Branch__:
-   - Push your changes to GitHub: `git push origin feature-branch`
+- Go 1.22 or higher
+- Git
 
-6. __Create a New Pull Request__:
-   - Go to the original repository and click the "New Pull Request" button.
-   - Choose your branch and submit the pull request for review.
+### Build from Source
 
-Thank you for your contributions!
+```bash
+# Clone the repository
+git clone https://github.com/smirnoffmg/deeper.git
+cd deeper
 
-## Plugin Example
+# Install dependencies
+make deps
 
-Here is an example of how to create a new plugin for Deeper:
+# Build the application
+make build
+
+# Run the application
+./build/deeper <input>
+```
+
+### Quick Start
+
+```bash
+# Run with default input
+make run
+
+# Run with custom input
+make run-custom INPUT=your_input_here
+
+# Run in development mode with hot reload
+make dev
+```
+
+## ⚙️ Configuration
+
+Deeper uses environment variables for configuration:
+
+| Variable                 | Default      | Description                              |
+| ------------------------ | ------------ | ---------------------------------------- |
+| `DEEPER_HTTP_TIMEOUT`    | `30s`        | HTTP request timeout                     |
+| `DEEPER_MAX_CONCURRENCY` | `10`         | Maximum concurrent operations            |
+| `DEEPER_RATE_LIMIT`      | `5`          | Requests per second                      |
+| `DEEPER_LOG_LEVEL`       | `info`       | Logging level (debug, info, warn, error) |
+| `DEEPER_USER_AGENT`      | `Deeper/1.0` | User agent for HTTP requests             |
+| `DEEPER_MAX_RETRIES`     | `3`          | Maximum retry attempts                   |
+| `DEEPER_RETRY_DELAY`     | `1s`         | Delay between retries                    |
+
+Example:
+
+```bash
+export DEEPER_LOG_LEVEL=debug
+export DEEPER_MAX_CONCURRENCY=20
+./deeper username
+```
+
+## 🧪 Testing
+
+The project includes comprehensive test coverage:
+
+```bash
+# Run all tests
+make test
+
+# Run tests with coverage report
+make test-coverage
+
+# Run tests with race detector
+make test-race
+
+# Run benchmarks
+make benchmark
+```
+
+## 🔧 Development
+
+### Project Structure
+
+```text
+deeper/
+├── internal/
+│   ├── config/          # Configuration management
+│   ├── display/         # Result presentation
+│   ├── engine/          # Core orchestration
+│   ├── entities/        # Data models and validation
+│   ├── errors/          # Structured error handling
+│   ├── http/            # HTTP client utilities
+│   ├── plugins/         # Plugin implementations
+│   ├── processor/       # Trace processing logic
+│   └── state/           # Global state management
+├── docs/                # Documentation and diagrams
+├── main.go              # Application entry point
+├── Makefile             # Build and development tasks
+└── README.md            # This file
+```
+
+### Adding a New Plugin
+
+1. Create a new directory in `internal/plugins/`
+2. Implement the `DeeperPlugin` interface:
 
 ```go
-package new_plugin
+package your_plugin
 
 import (
     "github.com/smirnoffmg/deeper/internal/entities"
     "github.com/smirnoffmg/deeper/internal/state"
 )
 
-//Use the appropriate TraceType
 const InputTraceType = entities.Username
 
 func init() {
     p := NewPlugin()
-    p.Register()
+    if err := p.Register(); err != nil {
+        log.Error().Err(err).Msgf("Failed to register plugin %s", p)
+    }
 }
 
-type NewPlugin struct{}
+type YourPlugin struct{}
 
-func NewPlugin() *NewPlugin {
-    return &NewPlugin{}
+func NewPlugin() *YourPlugin {
+    return &YourPlugin{}
 }
 
-func (g *NewPlugin) Register() error {
-    state.RegisterPlugin(InputTraceType, g)
+func (p *YourPlugin) Register() error {
+    state.RegisterPlugin(InputTraceType, p)
     return nil
 }
 
-func (g *NewPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
+func (p *YourPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
     if trace.Type != InputTraceType {
         return nil, nil
     }
-
-    // Your logic for processing the trace
+    
+    // Your plugin logic here
     var newTraces []entities.Trace
-    // Example: Add a new trace based on the input trace
-    newTraces = append(newTraces, entities.Trace{
-        Value: "example_trace_value",
-        Type:  InputTraceType,
-    })
+    // ... process trace and generate new traces
+    
     return newTraces, nil
 }
 
-func (g NewPlugin) String() string {
-    return "NewPlugin"
+func (p *YourPlugin) String() string {
+    return "YourPlugin"
 }
 ```
 
-## To-do list
+3. Import the plugin in `main.go`:
 
-- [ ] BitcoinAddress -> Blockchain Analysis
-- [ ] BitcoinAddress -> Transactions Analysis
-- [ ] BitcoinAddress -> Transactions, Associated Wallets
-- [ ] BitcoinAddress -> Wallet Balance
-- [ ] Company -> Company Details, Employee Emails
-- [ ] DnsRecord -> Subdomain, IpAddr
-- [ ] Domain -> AAAA Records
-- [ ] Domain -> CNAME Records
-- [ ] Domain -> MX Records
-- [ ] Domain -> NS Records
-- [ ] Domain -> PTR Records
-- [ ] Domain -> Redirect Chains
-- [ ] Domain -> Reverse DNS
-- [ ] Domain -> Sitelinks
-- [ ] Domain -> SOA Records
-- [ ] Domain -> SPF Records
-- [ ] Domain -> SSL Certificates
-- [x] Domain -> Subdomain Enumeration
-- [ ] Domain -> Subdomain, IpAddr
-- [ ] Domain -> TXT Records
-- [ ] Domain -> Web Technologies
-- [ ] Domain -> WHOIS History
-- [ ] Domain -> WHOIS Information
-- [ ] Domain -> Zone Transfers
-- [ ] Email -> Academic Papers
-- [ ] Email -> Associated Domains
-- [ ] Email -> Data Aggregators
-- [ ] Email -> Data Breaches
-- [ ] Email -> Data Mining
-- [ ] Email -> Email Verification
-- [ ] Email -> Facebook Profiles
-- [ ] Email -> Google Scholar Profiles
-- [ ] Email -> Gravatar
-- [ ] Email -> LinkedIn Connections
-- [ ] Email -> LinkedIn Profiles
-- [ ] Email -> Public Record Search
-- [ ] Email -> Reverse Email Search
-- [ ] Email -> Snapchat Profiles
-- [ ] Email -> Social Media Profiles
-- [ ] Email -> Twitter Profiles
-- [ ] ExifData -> Geolocation, Device Information
-- [ ] Geolocation -> Nearby Facilities
-- [ ] IpAddr -> Abuse Reports
-- [ ] IpAddr -> ASN Information
-- [ ] IpAddr -> DNS Lookup
-- [ ] IpAddr -> Domain Names
-- [ ] IpAddr -> Geolocation, ASN
-- [ ] IpAddr -> Hosting Provider
-- [ ] IpAddr -> IP Geolocation
-- [ ] IpAddr -> IP History
-- [ ] IpAddr -> Network Info
-- [ ] IpAddr -> Port Scan
-- [ ] IpAddr -> Service Detection
-- [ ] IpAddr -> Threat Intelligence
-- [ ] IpAddr -> Traffic Analysis
-- [ ] IpAddr -> WHOIS Info
-- [ ] MacAddr -> Device Information
-- [ ] Name -> Academic Publications
-- [ ] Name -> Address History
-- [ ] Name -> Business Records
-- [ ] Name -> Facebook Profiles
-- [ ] Name -> Google Scholar Profiles
-- [ ] Name -> Instagram Profiles
-- [ ] Name -> LinkedIn Profiles
-- [ ] Name -> Public Records
-- [ ] Name -> Relatives
-- [ ] Name -> Social Media Profiles, Public Records
-- [ ] PayPalAccount -> Transactions
-- [ ] Phone -> Business Listings
-- [ ] Phone -> Carrier Info
-- [ ] Phone -> Data Breaches
-- [ ] Phone -> Location
-- [ ] Phone -> Nuisance Reports
-- [ ] Phone -> Public Directories
-- [ ] Phone -> Public Profiles
-- [ ] Phone -> Skype Profiles
-- [ ] Phone -> Social Media Profiles
-- [ ] Phone -> Telegram Profiles
-- [ ] Phone -> Verification Services
-- [ ] Phone -> WhatsApp Profiles
-- [ ] Phone -> White Pages
-- [ ] Subdomain -> Associated Domains
-- [ ] Subdomain -> IP Addresses
-- [ ] Subdomain -> IpAddr, DnsRecord
-- [ ] Subdomain -> Reverse DNS
-- [ ] Subdomain -> Security Reports
-- [ ] Subdomain -> SOA Records
-- [ ] Subdomain -> SPF Records
-- [ ] Url -> Archived Pages
-- [ ] Url -> Domain, Subdomain
-- [x] Username -> Code Repositories
-- [ ] Username -> Data Breaches
-- [ ] Username -> DeviantArt Profiles
-- [ ] Username -> Email Addresses
-- [ ] Username -> Facebook Profiles
-- [ ] Username -> GitHub Repos
-- [ ] Username -> Instagram Profiles
-- [ ] Username -> LinkedIn Profiles
-- [ ] Username -> Medium Profiles
-- [ ] Username -> Pastebin Dumps
-- [ ] Username -> Pinterest Profiles
-- [ ] Username -> Quora Profiles
-- [ ] Username -> Reddit Profiles
-- [ ] Username -> Social Media Profiles
-- [ ] Username -> Social Mention
-- [ ] Username -> Steam Profiles
-- [ ] Username -> Tumblr Profiles
-- [ ] Username -> Twitter Profiles
+```go
+_ "github.com/smirnoffmg/deeper/internal/plugins/your_plugin"
+```
+
+### Development Commands
+
+```bash
+# Format code
+make fmt
+
+# Run linter
+make lint
+
+# Generate mocks for testing
+make mocks
+
+# Run security scan
+make security
+
+# Show all available commands
+make help
+```
+
+## 🔒 Security
+
+The project includes several security features:
+
+- **Input Validation**: Comprehensive validation of all inputs
+- **Rate Limiting**: Prevents abuse of external APIs
+- **Error Handling**: Secure error messages without information leakage
+- **Security Scanning**: Automated security checks with gosec
+
+## 📊 Performance
+
+- **Concurrent Processing**: Efficient parallel execution
+- **Connection Pooling**: Reusable HTTP connections
+- **Memory Management**: Proper resource cleanup
+- **Batch Processing**: Configurable batch sizes for large datasets
+
+## 🤝 Contributing
+
+We welcome contributions! Please follow these guidelines:
+
+1. **Fork the Repository**: Click the "Fork" button at the top right
+2. **Create a Feature Branch**: `git checkout -b feature/your-feature`
+3. **Follow Coding Standards**:
+   - Run `make fmt` to format code
+   - Run `make lint` to check for issues
+   - Add tests for new functionality
+4. **Commit Your Changes**: Use descriptive commit messages
+5. **Push to Your Branch**: `git push origin feature/your-feature`
+6. **Create a Pull Request**: Submit for review
+
+### Development Setup
+
+```bash
+# Install development tools
+make deps
+
+# Set up pre-commit hooks (optional)
+cp .git/hooks/pre-commit.sample .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+
+# Run tests before committing
+make test
+```
+
+## 📝 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🆘 Support
+
+- **Issues**: Report bugs and feature requests on GitHub
+- **Discussions**: Join community discussions
+- **Documentation**: Check the [docs](docs/) directory for detailed documentation
+
+## 🔄 Changelog
+
+### v1.0.0 (Current)
+
+- ✅ Modular plugin architecture
+- ✅ Concurrent trace processing
+- ✅ Comprehensive error handling
+- ✅ Configuration management
+- ✅ Test coverage
+- ✅ Rate limiting and retry logic
+- ✅ Structured logging
+- ✅ Security improvements
+
+## 📈 Roadmap
+
+- [ ] CLI framework with subcommands
+- [ ] Plugin lifecycle management
+- [ ] Metrics and monitoring
+- [ ] Database integration for trace storage
+- [ ] Web interface
+- [ ] API server mode
+- [ ] Plugin marketplace
+- [ ] Advanced filtering and search
+- [ ] Export functionality (JSON, CSV, etc.)
+- [ ] Integration with external OSINT tools
+
+---
+
+**Note**: This tool is designed for legitimate OSINT research and security testing. Please ensure you have proper authorization before using it on any systems or networks you don't own.
