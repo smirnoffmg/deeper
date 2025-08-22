@@ -81,7 +81,7 @@ Deeper uses environment variables for configuration:
 | Variable                 | Default      | Description                              |
 | ------------------------ | ------------ | ---------------------------------------- |
 | `DEEPER_HTTP_TIMEOUT`    | `30s`        | HTTP request timeout                     |
-| `DEEPER_MAX_CONCURRENCY` | `10`         | Maximum concurrent operations            |
+| `DEEPER_MAX_CONCURRENCY` | `10`         | Maximum number of concurrent workers in the worker pool |
 | `DEEPER_RATE_LIMIT`      | `5`          | Requests per second                      |
 | `DEEPER_LOG_LEVEL`       | `info`       | Logging level (debug, info, warn, error) |
 | `DEEPER_USER_AGENT`      | `Deeper/1.0` | User agent for HTTP requests             |

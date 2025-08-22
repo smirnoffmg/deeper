@@ -19,6 +19,7 @@ import (
 	"github.com/smirnoffmg/deeper/internal/pkg/http"
 	"github.com/smirnoffmg/deeper/internal/pkg/metrics"
 	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
+	"github.com/smirnoffmg/deeper/internal/pkg/worker"
 )
 
 // App represents the main application with all its components
@@ -40,6 +41,7 @@ func NewApp() *App {
 			provideHTTPClient,
 			provideMetricsCollector,
 			providePluginRegistry,
+			provideWorkerPool, // Add worker pool provider
 			provideProcessor,
 			provideDisplay,
 			provideEngine,
@@ -49,6 +51,7 @@ func NewApp() *App {
 			startupLogger,
 			startupPluginRegistry,
 			startupMetrics,
+			startupWorkerPool, // Add worker pool startup
 		),
 		// Lifecycle hooks
 		fx.StartTimeout(30*time.Second),
@@ -136,8 +139,14 @@ func providePluginRegistry() *plugins.PluginRegistry {
 }
 
 // provideProcessor provides a trace processor
-func provideProcessor(cfg *config.Config, metricsCollector *metrics.MetricsCollector, repo *database.Repository, cache *database.Cache) *processor.Processor {
-	return processor.NewProcessor(cfg, metricsCollector, repo, cache)
+func provideProcessor(
+	cfg *config.Config,
+	metricsCollector *metrics.MetricsCollector,
+	repo *database.Repository,
+	cache *database.Cache,
+	pool *worker.Pool, // Inject worker pool
+) *processor.Processor {
+	return processor.NewProcessor(cfg, metricsCollector, repo, cache, pool)
 }
 
 // provideDisplay provides a result display
@@ -146,8 +155,14 @@ func provideDisplay() *display.Display {
 }
 
 // provideEngine provides the main processing engine
-func provideEngine(cfg *config.Config, metricsCollector *metrics.MetricsCollector, repo *database.Repository, cache *database.Cache) *engine.Engine {
-	return engine.NewEngine(cfg, metricsCollector, repo, cache)
+func provideEngine(
+	cfg *config.Config,
+	metricsCollector *metrics.MetricsCollector,
+	repo *database.Repository,
+	cache *database.Cache,
+	pool *worker.Pool, // Inject worker pool
+) *engine.Engine {
+	return engine.NewEngine(cfg, metricsCollector, repo, cache, pool)
 }
 
 // provideCLI provides the CLI interface
@@ -176,4 +191,25 @@ func startupPluginRegistry(registry *plugins.PluginRegistry, logger *zap.Logger)
 func startupMetrics(collector *metrics.MetricsCollector, logger *zap.Logger) {
 	logger.Info("Initializing metrics collection")
 	// Metrics collector is ready to use
+}
+
+// provideWorkerPool provides a worker pool
+func provideWorkerPool(cfg *config.Config) *worker.Pool {
+	return worker.NewPool(cfg.MaxConcurrency)
+}
+
+// startupWorkerPool starts the worker pool
+func startupWorkerPool(lc fx.Lifecycle, pool *worker.Pool, logger *zap.Logger) {
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			logger.Info("Starting worker pool")
+			pool.Start(ctx)
+			return nil
+		},
+		OnStop: func(ctx context.Context) error {
+			logger.Info("Stopping worker pool")
+			pool.Stop()
+			return nil
+		},
+	})
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/smirnoffmg/deeper/internal/pkg/config"
 	"github.com/smirnoffmg/deeper/internal/pkg/database"
 	"github.com/smirnoffmg/deeper/internal/pkg/metrics"
+	"github.com/smirnoffmg/deeper/internal/pkg/worker"
 )
 
 var (
@@ -140,7 +141,13 @@ func createEngine() *engine.Engine {
 	repo := database.NewRepository(db)
 	cache := database.NewCache(repo)
 
-	return engine.NewEngine(cfg, metricsCollector, repo, cache)
+	// Create and start worker pool
+	pool := worker.NewPool(cfg.MaxConcurrency)
+	// In CLI mode, we don't have a graceful shutdown context, so we start it manually.
+	// The application will exit when the command is done.
+	go pool.Start(rootCmd.Context())
+
+	return engine.NewEngine(cfg, metricsCollector, repo, cache, pool)
 }
 
 func createDisplay() *display.Display {

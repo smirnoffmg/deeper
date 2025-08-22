@@ -10,6 +10,7 @@ import (
 	"github.com/smirnoffmg/deeper/internal/pkg/database"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 	"github.com/smirnoffmg/deeper/internal/pkg/metrics"
+	"github.com/smirnoffmg/deeper/internal/pkg/worker"
 )
 
 // Engine orchestrates the trace processing workflow
@@ -17,14 +18,22 @@ type Engine struct {
 	config    *config.Config
 	processor *processor.Processor
 	metrics   *metrics.MetricsCollector
+	pool      *worker.Pool
 }
 
 // NewEngine creates a new trace processing engine
-func NewEngine(cfg *config.Config, metricsCollector *metrics.MetricsCollector, repo *database.Repository, cache *database.Cache) *Engine {
+func NewEngine(
+	cfg *config.Config,
+	metricsCollector *metrics.MetricsCollector,
+	repo *database.Repository,
+	cache *database.Cache,
+	pool *worker.Pool,
+) *Engine {
 	return &Engine{
 		config:    cfg,
-		processor: processor.NewProcessor(cfg, metricsCollector, repo, cache),
+		processor: processor.NewProcessor(cfg, metricsCollector, repo, cache, pool),
 		metrics:   metricsCollector,
+		pool:      pool,
 	}
 }
 
@@ -80,45 +89,46 @@ func (e *Engine) processBatch(ctx context.Context, traces []entities.Trace) ([]e
 	resultChan := make(chan []entities.Trace, len(traces))
 	errorChan := make(chan error, len(traces))
 
-	// Process each trace in the batch
+	wg.Add(len(traces))
+
 	for _, trace := range traces {
-		wg.Add(1)
-		go func(t entities.Trace) {
-			defer wg.Done()
-
-			results, err := e.processor.ProcessTrace(ctx, t)
-			if err != nil {
-				log.Error().Err(err).Msgf("Failed to process trace %v", t)
-				errorChan <- err
-				return
-			}
-
-			resultChan <- results
-		}(trace)
+		job := worker.Job{
+			ID: trace.Value,
+			Execute: func(ctx context.Context) (interface{}, error) {
+				return e.processor.ProcessTrace(ctx, trace)
+			},
+			Callback: func(result interface{}, err error) {
+				defer wg.Done()
+				if err != nil {
+					log.Error().Err(err).Msgf("Failed to process trace %v", trace)
+					errorChan <- err
+					return
+				}
+				resultChan <- result.([]entities.Trace)
+			},
+		}
+		e.pool.Submit(job)
 	}
 
-	// Wait for all goroutines to complete
-	go func() {
-		wg.Wait()
-		close(resultChan)
-		close(errorChan)
-	}()
+	// Wait for all jobs to complete
+	wg.Wait()
+	close(resultChan)
+	close(errorChan)
 
 	// Collect results
 	var allResults []entities.Trace
-	var errors []error
+	var allErrors []error
 
 	for results := range resultChan {
 		allResults = append(allResults, results...)
 	}
 
 	for err := range errorChan {
-		errors = append(errors, err)
+		allErrors = append(allErrors, err)
 	}
 
-	// Log errors but don't fail the entire batch
-	if len(errors) > 0 {
-		log.Warn().Msgf("Encountered %d errors in batch processing", len(errors))
+	if len(allErrors) > 0 {
+		log.Warn().Msgf("Encountered %d errors in batch processing", len(allErrors))
 	}
 
 	return allResults, nil
