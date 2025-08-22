@@ -92,20 +92,19 @@ func (e *Engine) processBatch(ctx context.Context, traces []entities.Trace) ([]e
 	wg.Add(len(traces))
 
 	for _, trace := range traces {
-		job := worker.Job{
-			ID: trace.Value,
-			Execute: func(ctx context.Context) (interface{}, error) {
-				return e.processor.ProcessTrace(ctx, trace)
-			},
-			Callback: func(result interface{}, err error) {
-				defer wg.Done()
-				if err != nil {
-					log.Error().Err(err).Msgf("Failed to process trace %v", trace)
-					errorChan <- err
-					return
-				}
-				resultChan <- result.([]entities.Trace)
-			},
+		job := e.pool.GetJob()
+		job.ID = trace.Value
+		job.Execute = func(ctx context.Context) (interface{}, error) {
+			return e.processor.ProcessTrace(ctx, trace)
+		}
+		job.Callback = func(result interface{}, err error) {
+			defer wg.Done()
+			if err != nil {
+				log.Error().Err(err).Msgf("Failed to process trace %v", trace)
+				errorChan <- err
+				return
+			}
+			resultChan <- result.([]entities.Trace)
 		}
 		e.pool.Submit(job)
 	}

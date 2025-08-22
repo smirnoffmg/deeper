@@ -58,43 +58,42 @@ func (p *Processor) ProcessTrace(ctx context.Context, trace entities.Trace) ([]e
 	wg.Add(len(plugins))
 
 	for _, plugin := range plugins {
-		job := worker.Job{
-			ID: trace.Value,
-			Execute: func(ctx context.Context) (interface{}, error) {
-				pluginInterface, ok := plugin.(interface {
-					FollowTrace(trace entities.Trace) ([]entities.Trace, error)
-					String() string
-				})
-				if !ok {
-					return nil, errors.NewPluginError("invalid plugin interface", nil)
-				}
+		job := p.pool.GetJob()
+		job.ID = trace.Value
+		job.Execute = func(ctx context.Context) (interface{}, error) {
+			pluginInterface, ok := plugin.(interface {
+				FollowTrace(trace entities.Trace) ([]entities.Trace, error)
+				String() string
+			})
+			if !ok {
+				return nil, errors.NewPluginError("invalid plugin interface", nil)
+			}
 
-				pluginStartTime := time.Now()
-				log.Debug().Msgf("Processing trace %v with plugin %s", trace, pluginInterface.String())
-				newTraces, err := pluginInterface.FollowTrace(trace)
-				pluginDuration := time.Since(pluginStartTime)
-				p.metrics.RecordPluginExecution(pluginInterface.String(), pluginDuration, err == nil)
+			pluginStartTime := time.Now()
+			log.Debug().Msgf("Processing trace %v with plugin %s", trace, pluginInterface.String())
+			newTraces, err := pluginInterface.FollowTrace(trace)
+			pluginDuration := time.Since(pluginStartTime)
+			p.metrics.RecordPluginExecution(pluginInterface.String(), pluginDuration, err == nil)
 
-				if err != nil {
-					return nil, errors.NewPluginError("plugin processing failed", err).WithContext("plugin", pluginInterface.String())
-				}
+			if err != nil {
+				return nil, errors.NewPluginError("plugin processing failed", err).WithContext("plugin", pluginInterface.String())
+			}
 
-				var validTraces []entities.Trace
-				for _, newTrace := range newTraces {
-					if newTrace.Value != "" {
-						validTraces = append(validTraces, newTrace)
-					}
+			var validTraces []entities.Trace
+			for _, newTrace := range newTraces {
+				if newTrace.Value != "" {
+					validTraces = append(validTraces, newTrace)
 				}
-				return validTraces, nil
-			},
-			Callback: func(result interface{}, err error) {
-				defer wg.Done()
-				if err != nil {
-					errorChan <- err
-					return
-				}
-				resultChan <- result.([]entities.Trace)
-			},
+			}
+			return validTraces, nil
+		}
+		job.Callback = func(result interface{}, err error) {
+			defer wg.Done()
+			if err != nil {
+				errorChan <- err
+				return
+			}
+			resultChan <- result.([]entities.Trace)
 		}
 		p.pool.Submit(job)
 	}

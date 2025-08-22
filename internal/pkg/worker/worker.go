@@ -17,15 +17,21 @@ type Job struct {
 // Pool represents a worker pool
 type Pool struct {
 	numWorkers int
-	jobs       chan Job
+	jobs       chan *Job
 	wg         sync.WaitGroup
+	jobPool    sync.Pool
 }
 
 // NewPool creates a new worker pool
 func NewPool(numWorkers int) *Pool {
 	return &Pool{
 		numWorkers: numWorkers,
-		jobs:       make(chan Job),
+		jobs:       make(chan *Job),
+		jobPool: sync.Pool{
+			New: func() interface{} {
+				return &Job{}
+			},
+		},
 	}
 }
 
@@ -46,8 +52,22 @@ func (p *Pool) Stop() {
 }
 
 // Submit submits a job to the worker pool
-func (p *Pool) Submit(job Job) {
+func (p *Pool) Submit(job *Job) {
 	p.jobs <- job
+}
+
+// GetJob gets a job from the pool
+func (p *Pool) GetJob() *Job {
+	return p.jobPool.Get().(*Job)
+}
+
+// PutJob puts a job back into the pool
+func (p *Pool) PutJob(job *Job) {
+	// Reset job fields before putting it back to the pool
+	job.ID = ""
+	job.Execute = nil
+	job.Callback = nil
+	p.jobPool.Put(job)
 }
 
 // worker is the main worker function
@@ -68,6 +88,10 @@ func (p *Pool) worker(ctx context.Context, id int) {
 			if job.Callback != nil {
 				job.Callback(result, err)
 			}
+
+			// Put the job back to the pool for reuse
+			p.PutJob(job)
+
 		case <-ctx.Done():
 			log.Debug().Msgf("Worker %d stopping due to context cancellation", id)
 			return
