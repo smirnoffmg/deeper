@@ -141,3 +141,5 @@ $RECYCLE.BIN/
 
 .env
 build/deeper
+deeper
+.cursor/

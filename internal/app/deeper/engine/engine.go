@@ -2,7 +2,7 @@ package engine
 
 import (
 	"context"
-	"sync"
+	"time"
 
 	"github.com/rs/zerolog/log"
 	"github.com/smirnoffmg/deeper/internal/app/deeper/processor"
@@ -74,46 +74,21 @@ func (e *Engine) ProcessInput(ctx context.Context, input string) ([]entities.Tra
 	return allTraces, nil
 }
 
-// processBatch processes a batch of traces concurrently
+// processBatch processes a batch of traces using the processor's worker pool
 func (e *Engine) processBatch(ctx context.Context, traces []entities.Trace) ([]entities.Trace, error) {
-	var wg sync.WaitGroup
-	resultChan := make(chan []entities.Trace, len(traces))
-	errorChan := make(chan error, len(traces))
-
-	// Process each trace in the batch
-	for _, trace := range traces {
-		wg.Add(1)
-		go func(t entities.Trace) {
-			defer wg.Done()
-
-			results, err := e.processor.ProcessTrace(ctx, t)
-			if err != nil {
-				log.Error().Err(err).Msgf("Failed to process trace %v", t)
-				errorChan <- err
-				return
-			}
-
-			resultChan <- results
-		}(trace)
-	}
-
-	// Wait for all goroutines to complete
-	go func() {
-		wg.Wait()
-		close(resultChan)
-		close(errorChan)
-	}()
-
-	// Collect results
 	var allResults []entities.Trace
 	var errors []error
 
-	for results := range resultChan {
-		allResults = append(allResults, results...)
-	}
+	// Process each trace in the batch sequentially (the processor handles concurrency internally)
+	for _, trace := range traces {
+		results, err := e.processor.ProcessTrace(ctx, trace)
+		if err != nil {
+			log.Error().Err(err).Msgf("Failed to process trace %v", trace)
+			errors = append(errors, err)
+			continue
+		}
 
-	for err := range errorChan {
-		errors = append(errors, err)
+		allResults = append(allResults, results...)
 	}
 
 	// Log errors but don't fail the entire batch
@@ -130,4 +105,20 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// Shutdown gracefully shuts down the engine and its processor
+func (e *Engine) Shutdown(timeout time.Duration) error {
+	if e.processor != nil {
+		return e.processor.Shutdown(timeout)
+	}
+	return nil
+}
+
+// GetWorkerPoolMetrics returns worker pool metrics from the processor
+func (e *Engine) GetWorkerPoolMetrics() interface{} {
+	if e.processor != nil {
+		return e.processor.GetWorkerPoolMetrics()
+	}
+	return nil
 }
