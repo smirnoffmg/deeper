@@ -21,8 +21,8 @@ var (
 var scanCmd = &cobra.Command{
 	Use:   "scan [input]",
 	Short: "Scan and discover traces for the given input",
-	Long: `Scan analyzes the provided input (email, username, domain, etc.) and 
-discovers related traces using various plugins. The scan follows traces 
+	Long: `Scan analyzes the provided input (email, username, domain, etc.) and
+discovers related traces using various plugins. The scan follows traces
 recursively to build a comprehensive profile.
 
 Examples:

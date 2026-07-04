@@ -50,7 +50,7 @@ func TestYourFunction(t *testing.T) {
             wantErr:  true,
         },
     }
-    
+
     for _, tt := range tests {
         t.Run(tt.name, func(t *testing.T) {
             result, err := YourFunction(tt.input)
@@ -77,11 +77,11 @@ func TestDatabaseOperation(t *testing.T) {
     // Create temporary database
     tempDir := t.TempDir()
     dbPath := filepath.Join(tempDir, "test.db")
-    
+
     db, err := NewDatabase(dbPath)
     require.NoError(t, err)
     defer db.Close()
-    
+
     // Your test code here
 }
 ```
@@ -99,16 +99,16 @@ func TestCache_SetAndGet(t *testing.T) {
     dbPath := filepath.Join(tempDir, "test.db")
     db, _ := NewDatabase(dbPath)
     defer db.Close()
-    
+
     repo := NewRepository(db)
     cache := NewCache(repo)
-    
+
     // Test Set
     trace := entities.Trace{Value: "test@example.com", Type: entities.Email}
     results := []entities.Trace{{Value: "result@example.com", Type: entities.Email}}
     err := cache.Set(trace, "TestPlugin", results, time.Hour)
     require.NoError(t, err)
-    
+
     // Test Get
     retrieved, err := cache.Get(trace, "TestPlugin")
     require.NoError(t, err)
@@ -131,10 +131,10 @@ func TestWorkerPool_ConcurrentProcessing(t *testing.T) {
         DefaultBurst:     100,
         TaskTimeout:      5 * time.Second,
     }
-    
+
     wp := NewWorkerPool(config)
     defer wp.Shutdown(10 * time.Second)
-    
+
     // Submit concurrent tasks
     // Verify results
 }
@@ -156,7 +156,7 @@ func TestNewTrace(t *testing.T) {
         {"email", "test@example.com", Email},
         {"domain", "example.com", Domain},
     }
-    
+
     for _, tt := range tests {
         t.Run(tt.name, func(t *testing.T) {
             trace := NewTrace(tt.value)
@@ -175,16 +175,16 @@ func TestNewTrace(t *testing.T) {
 ```go
 func TestPlugin_FollowTrace(t *testing.T) {
     plugin := NewPlugin()
-    
+
     trace := entities.Trace{
         Value: "test@example.com",
         Type:  entities.Email,
     }
-    
+
     results, err := plugin.FollowTrace(trace)
     require.NoError(t, err)
     assert.NotEmpty(t, results)
-    
+
     // Verify result types
     for _, result := range results {
         assert.NotEmpty(t, result.Value)
@@ -214,7 +214,7 @@ func TestIntegration_EndToEnd(t *testing.T) {
     if testing.Short() {
         t.Skip("Skipping integration test")
     }
-    
+
     // Setup real components
     // Test complete workflow
     // Cleanup
@@ -314,10 +314,10 @@ func TestPlugin_WithMockHTTP(t *testing.T) {
             // Return mock response
         },
     }
-    
+
     plugin := NewPlugin()
     plugin.client = mockClient
-    
+
     // Test plugin
 }
 ```
@@ -330,7 +330,7 @@ func TestPlugin_WithMockHTTP(t *testing.T) {
 func BenchmarkCache_Set(b *testing.B) {
     // Setup
     cache := setupCache()
-    
+
     b.ResetTimer()
     for i := 0; i < b.N; i++ {
         cache.Set(trace, "Plugin", results, time.Hour)
@@ -365,10 +365,10 @@ func TestCache_Expiration(t *testing.T) {
     // Use short durations for tests
     err := cache.Set(trace, "Plugin", results, 100*time.Millisecond)
     require.NoError(t, err)
-    
+
     // Wait for expiration
     time.Sleep(150 * time.Millisecond)
-    
+
     // Verify expired
     result, err := cache.Get(trace, "Plugin")
     assert.Nil(t, result)
@@ -399,7 +399,7 @@ func TestErrorHandling(t *testing.T) {
     _, err := function("invalid")
     assert.Error(t, err)
     assert.Contains(t, err.Error(), "expected error message")
-    
+
     // Test nil input
     _, err = function(nil)
     assert.Error(t, err)

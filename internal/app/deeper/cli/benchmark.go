@@ -33,7 +33,7 @@ func init() {
 	benchmarkCmd.Flags().Float64SliceVarP(&benchmarkRateLimits, "rate-limits", "r", []float64{1, 5, 10, 20}, "Rate limits to test (requests per second)")
 	benchmarkCmd.Flags().Float64SliceVarP(&benchmarkFailureRates, "failure-rates", "f", []float64{0.1, 0.2, 0.5}, "Failure rates to test for circuit breaker")
 	benchmarkCmd.Flags().DurationVarP(&benchmarkTimeout, "timeout", "o", 5*time.Minute, "Benchmark timeout")
-	
+
 	rootCmd.AddCommand(benchmarkCmd)
 }
 
@@ -43,7 +43,7 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 
 	// Load configuration
 	cfg := config.LoadConfig()
-	
+
 	// Create benchmark suite
 	benchmarkSuite := benchmark.NewBenchmarkSuite(cfg)
 
@@ -101,52 +101,52 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 
 func generateBenchmarkSummary(results []*benchmark.BenchmarkResult) {
 	fmt.Println("\n=== Benchmark Summary ===")
-	
+
 	// Find best performing configuration
 	var bestThroughput float64
 	var bestResult *benchmark.BenchmarkResult
-	
+
 	for _, result := range results {
 		if result.Throughput > bestThroughput {
 			bestThroughput = result.Throughput
 			bestResult = result
 		}
 	}
-	
+
 	if bestResult != nil {
 		fmt.Printf("Best Performance: %s\n", bestResult.TestName)
 		fmt.Printf("  Throughput: %.2f traces/second\n", bestResult.Throughput)
 		fmt.Printf("  Error Rate: %.2f%%\n", bestResult.ErrorRate)
 		fmt.Printf("  Duration: %s\n", bestResult.Duration)
 	}
-	
+
 	// Calculate averages
 	var totalThroughput float64
 	var totalErrorRate float64
 	var totalDuration time.Duration
-	
+
 	for _, result := range results {
 		totalThroughput += result.Throughput
 		totalErrorRate += result.ErrorRate
 		totalDuration += result.Duration
 	}
-	
+
 	avgThroughput := totalThroughput / float64(len(results))
 	avgErrorRate := totalErrorRate / float64(len(results))
 	avgDuration := totalDuration / time.Duration(len(results))
-	
+
 	fmt.Printf("\nAverage Performance:\n")
 	fmt.Printf("  Throughput: %.2f traces/second\n", avgThroughput)
 	fmt.Printf("  Error Rate: %.2f%%\n", avgErrorRate)
 	fmt.Printf("  Duration: %s\n", avgDuration)
-	
+
 	// Performance recommendations
 	fmt.Println("\n=== Performance Recommendations ===")
-	
+
 	// Find optimal concurrency
 	var optimalConcurrency int
 	var maxConcurrencyThroughput float64
-	
+
 	for _, result := range results {
 		if result.TestName[:25] == "Concurrency Benchmark (" {
 			if result.Throughput > maxConcurrencyThroughput {
@@ -161,15 +161,15 @@ func generateBenchmarkSummary(results []*benchmark.BenchmarkResult) {
 			}
 		}
 	}
-	
+
 	if optimalConcurrency > 0 {
 		fmt.Printf("Optimal Worker Pool Size: %d workers\n", optimalConcurrency)
 	}
-	
+
 	// Rate limiting recommendations
 	var optimalRateLimit float64
 	var maxRateLimitThroughput float64
-	
+
 	for _, result := range results {
 		if result.TestName[:22] == "Rate Limit Benchmark (" {
 			if result.Throughput > maxRateLimitThroughput {
@@ -184,10 +184,10 @@ func generateBenchmarkSummary(results []*benchmark.BenchmarkResult) {
 			}
 		}
 	}
-	
+
 	if optimalRateLimit > 0 {
 		fmt.Printf("Optimal Rate Limit: %.1f requests/second\n", optimalRateLimit)
 	}
-	
+
 	fmt.Println("\nBenchmark completed successfully!")
 }

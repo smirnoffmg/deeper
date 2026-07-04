@@ -182,11 +182,11 @@ func (p *YourPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error)
     if trace.Type != InputTraceType {
         return nil, nil
     }
-    
+
     // Your plugin logic here
     var newTraces []entities.Trace
     // ... process trace and generate new traces
-    
+
     return newTraces, nil
 }
 
@@ -256,12 +256,12 @@ We welcome contributions! Please follow these guidelines:
 # Install development tools
 make deps
 
-# Set up pre-commit hooks (optional)
-cp .git/hooks/pre-commit.sample .git/hooks/pre-commit
-chmod +x .git/hooks/pre-commit
+# Install pre-commit hooks (runs golangci-lint + go test on each commit)
+pip install pre-commit   # or: brew install pre-commit
+make pre-commit
 
-# Run tests before committing
-make test
+# Run hooks manually without committing
+make pre-commit-run
 ```
 
 ## 📝 License

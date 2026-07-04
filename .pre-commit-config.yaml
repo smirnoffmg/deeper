@@ -9,6 +9,16 @@ repos:
       - id: detect-private-key
 
   - repo: https://github.com/golangci/golangci-lint
-    rev: v1.59.0
+    rev: v2.9.0
     hooks:
-      - id: golangci-lint-full
+      - id: golangci-lint
+        args: [--timeout=5m]
+
+  - repo: local
+    hooks:
+      - id: go-test
+        name: go test
+        entry: go test ./...
+        language: system
+        pass_filenames: false
+        always_run: true

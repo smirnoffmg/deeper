@@ -86,6 +86,17 @@ deps:
 	@go mod download
 	@go mod tidy
 
+# Install pre-commit git hooks
+.PHONY: pre-commit
+pre-commit:
+	@command -v pre-commit >/dev/null 2>&1 || { echo "Install pre-commit: pip install pre-commit  (or: brew install pre-commit)"; exit 1; }
+	@pre-commit install
+
+# Run all pre-commit hooks (same as at commit time)
+.PHONY: pre-commit-run
+pre-commit-run:
+	@pre-commit run --all-files
+
 # Clean build artifacts
 .PHONY: clean
 clean:

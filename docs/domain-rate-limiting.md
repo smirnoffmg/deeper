@@ -158,7 +158,7 @@ domains := []struct {
 
 for _, d := range domains {
     err := processor.ConfigureDomainRateLimit(
-        d.domain, d.rateLimit, d.burst, 
+        d.domain, d.rateLimit, d.burst,
         d.backoffBase, d.backoffMax, d.maxRetries,
     )
     if err != nil {

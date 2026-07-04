@@ -30,9 +30,9 @@ var (
 var rootCmd = &cobra.Command{
 	Use:   "deeper [input]",
 	Short: "A powerful OSINT tool for gathering information from various online sources",
-	Long: `Deeper is an OSINT (Open Source Intelligence) tool designed to help users 
-gather information from various online sources. The tool operates based on the 
-concept of "traces" - pieces of information such as emails, phone numbers, domains, 
+	Long: `Deeper is an OSINT (Open Source Intelligence) tool designed to help users
+gather information from various online sources. The tool operates based on the
+concept of "traces" - pieces of information such as emails, phone numbers, domains,
 or usernames that can be followed to discover new traces.
 
 Examples:

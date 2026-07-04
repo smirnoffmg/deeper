@@ -17,8 +17,8 @@ import (
 var pluginsCmd = &cobra.Command{
 	Use:   "plugins",
 	Short: "Manage and inspect plugins",
-	Long: `The plugins command allows you to list, inspect, and manage the available 
-plugins in the Deeper system. Each plugin specializes in processing specific 
+	Long: `The plugins command allows you to list, inspect, and manage the available
+plugins in the Deeper system. Each plugin specializes in processing specific
 trace types and discovering new traces.`,
 }
 
@@ -26,7 +26,7 @@ trace types and discovering new traces.`,
 var pluginsListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all available plugins",
-	Long: `List all plugins currently registered in the system, showing which 
+	Long: `List all plugins currently registered in the system, showing which
 trace types they handle and their current status.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return listPlugins()
