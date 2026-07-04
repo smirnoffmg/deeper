@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -101,7 +102,7 @@ func setupLogging() {
 	zerolog.SetGlobalLevel(level)
 }
 
-func createEngine() *engine.Engine {
+func createEngine() (*engine.Engine, *database.Repository, error) {
 	// Create configuration with CLI flags
 	cfg := config.LoadConfig()
 
@@ -119,27 +120,23 @@ func createEngine() *engine.Engine {
 		cfg.LogLevel = logLevel
 	}
 
-	// Get global metrics collector
 	metricsCollector := metrics.GetGlobalMetrics()
 
-	// Create database and cache (for CLI mode)
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to get home directory")
-		return nil
+		return nil, nil, fmt.Errorf("failed to get home directory: %w", err)
 	}
 
 	dbPath := filepath.Join(homeDir, ".deeper", "deeper.db")
 	db, err := database.NewDatabase(dbPath)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to create database")
-		return nil
+		return nil, nil, fmt.Errorf("failed to create database: %w", err)
 	}
 
 	repo := database.NewRepository(db)
 	cache := database.NewCache(repo)
 
-	return engine.NewEngine(cfg, metricsCollector, repo, cache)
+	return engine.NewEngine(cfg, metricsCollector, repo, cache), repo, nil
 }
 
 func createDisplay() *display.Display {

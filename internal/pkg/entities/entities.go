@@ -83,6 +83,13 @@ type Trace struct {
 	Type  TraceType
 }
 
+// Discovery records a parent trace, the plugin that derived a child, and the child trace.
+type Discovery struct {
+	Parent     Trace
+	PluginName string
+	Child      Trace
+}
+
 func (t Trace) String() string {
 	return t.Value + " (" + string(t.Type) + ")"
 }

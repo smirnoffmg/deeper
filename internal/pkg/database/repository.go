@@ -32,18 +32,15 @@ func (r *Repository) StoreTrace(trace *Trace) error {
 	}
 
 	query := `
-		INSERT OR IGNORE INTO traces (value, type, discovered_at, source_plugin, metadata, scan_id, depth)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT OR IGNORE INTO traces (value, type, discovered_at, metadata)
+		VALUES (?, ?, ?, ?)
 	`
 
 	result, err := r.db.db.Exec(query,
 		trace.Value,
 		trace.Type,
 		trace.DiscoveredAt,
-		trace.SourcePlugin,
 		metadata,
-		trace.ScanID,
-		trace.Depth,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to store trace: %w", err)
@@ -70,16 +67,6 @@ func (r *Repository) GetTraces(query TraceQuery) ([]Trace, error) {
 		args = append(args, *query.Type)
 	}
 
-	if query.SourcePlugin != nil {
-		conditions = append(conditions, "source_plugin = ?")
-		args = append(args, *query.SourcePlugin)
-	}
-
-	if query.ScanID != nil {
-		conditions = append(conditions, "scan_id = ?")
-		args = append(args, *query.ScanID)
-	}
-
 	if query.FromDate != nil {
 		conditions = append(conditions, "discovered_at >= ?")
 		args = append(args, query.FromDate)
@@ -92,7 +79,7 @@ func (r *Repository) GetTraces(query TraceQuery) ([]Trace, error) {
 
 	whereClause := strings.Join(conditions, " AND ")
 	sqlQuery := fmt.Sprintf(`
-		SELECT id, value, type, discovered_at, source_plugin, metadata, scan_id, depth
+		SELECT id, value, type, discovered_at, metadata
 		FROM traces
 		WHERE %s
 		ORDER BY discovered_at DESC
@@ -116,10 +103,7 @@ func (r *Repository) GetTraces(query TraceQuery) ([]Trace, error) {
 			&trace.Value,
 			&trace.Type,
 			&trace.DiscoveredAt,
-			&trace.SourcePlugin,
 			&metadataStr,
-			&trace.ScanID,
-			&trace.Depth,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan trace: %w", err)
@@ -143,7 +127,7 @@ func (r *Repository) GetTraceByValue(value string, traceType entities.TraceType)
 	defer r.db.mu.RUnlock()
 
 	query := `
-		SELECT id, value, type, discovered_at, source_plugin, metadata, scan_id, depth
+		SELECT id, value, type, discovered_at, metadata
 		FROM traces
 		WHERE value = ? AND type = ?
 		LIMIT 1
@@ -156,10 +140,7 @@ func (r *Repository) GetTraceByValue(value string, traceType entities.TraceType)
 		&trace.Value,
 		&trace.Type,
 		&trace.DiscoveredAt,
-		&trace.SourcePlugin,
 		&metadataStr,
-		&trace.ScanID,
-		&trace.Depth,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {

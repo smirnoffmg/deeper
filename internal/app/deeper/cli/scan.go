@@ -36,19 +36,35 @@ Examples:
 
 		log.Info().Msgf("Starting scan for input: %s", input)
 
-		// Create engine and display
-		engine := createEngine()
+		eng, repo, err := createEngine()
+		if err != nil {
+			return err
+		}
 		display := createDisplay()
 
-		// Create context with timeout
+		session, err := repo.CreateScanSession(input)
+		if err != nil {
+			return fmt.Errorf("failed to create scan session: %w", err)
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 
-		// Process the input
 		startTime := time.Now()
-		traces, err := engine.ProcessInput(ctx, input)
+		traces, err := eng.ProcessInput(ctx, input, session.ID)
+		completedAt := time.Now()
+		session.CompletedAt = &completedAt
 		if err != nil {
+			session.Status = "failed"
+			_ = repo.UpdateScanSession(session)
 			return fmt.Errorf("failed to process input: %w", err)
+		}
+
+		session.Status = "completed"
+		session.UniqueTraces = len(traces)
+		session.TotalTraces = len(traces)
+		if err := repo.UpdateScanSession(session); err != nil {
+			return fmt.Errorf("failed to update scan session: %w", err)
 		}
 
 		processingTime := time.Since(startTime)

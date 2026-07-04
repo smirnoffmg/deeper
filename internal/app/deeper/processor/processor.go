@@ -72,7 +72,7 @@ func NewProcessor(cfg *config.Config, metricsCollector *metrics.MetricsCollector
 }
 
 // ProcessTrace processes a single trace through all applicable plugins using worker pool
-func (p *Processor) ProcessTrace(ctx context.Context, trace entities.Trace) ([]entities.Trace, error) {
+func (p *Processor) ProcessTrace(ctx context.Context, trace entities.Trace) ([]entities.Discovery, error) {
 	startTime := time.Now()
 
 	plugins, exists := state.ActivePlugins[trace.Type]
@@ -80,11 +80,11 @@ func (p *Processor) ProcessTrace(ctx context.Context, trace entities.Trace) ([]e
 		log.Debug().Msgf("No plugins found for trace type %s", trace.Type)
 		// Record metrics for skipped trace
 		p.metrics.RecordTraceTypeMetrics(trace.Type, false, 0, time.Since(startTime))
-		return []entities.Trace{}, nil
+		return []entities.Discovery{}, nil
 	}
 
 	// Create tasks for each plugin
-	var allTraces []entities.Trace
+	var discoveries []entities.Discovery
 	var allErrors []error
 
 	// Submit tasks to worker pool
@@ -125,7 +125,7 @@ func (p *Processor) ProcessTrace(ctx context.Context, trace entities.Trace) ([]e
 		result, err := p.workerPool.GetResult(ctx)
 		if err != nil {
 			if err == context.Canceled {
-				return allTraces, ctx.Err()
+				return discoveries, ctx.Err()
 			}
 			allErrors = append(allErrors, err)
 			continue
@@ -136,13 +136,17 @@ func (p *Processor) ProcessTrace(ctx context.Context, trace entities.Trace) ([]e
 			continue
 		}
 
-		newTraces, ok := result.Result.([]entities.Trace)
+		pluginResult, ok := result.Result.(pluginTraceResult)
 		if !ok {
 			continue
 		}
-		for _, newTrace := range newTraces {
+		for _, newTrace := range pluginResult.Traces {
 			if newTrace.Value != "" {
-				allTraces = append(allTraces, newTrace)
+				discoveries = append(discoveries, entities.Discovery{
+					Parent:     trace,
+					PluginName: pluginResult.PluginName,
+					Child:      newTrace,
+				})
 			}
 		}
 	}
@@ -150,7 +154,7 @@ func (p *Processor) ProcessTrace(ctx context.Context, trace entities.Trace) ([]e
 	// Record final metrics
 	totalDuration := time.Since(startTime)
 	p.metrics.RecordProcessingTime(totalDuration)
-	p.metrics.RecordTraceTypeMetrics(trace.Type, true, len(allTraces), totalDuration)
+	p.metrics.RecordTraceTypeMetrics(trace.Type, true, len(discoveries), totalDuration)
 	p.metrics.IncrementTracesProcessed()
 	p.metrics.IncrementTracesDiscovered()
 
@@ -162,12 +166,12 @@ func (p *Processor) ProcessTrace(ctx context.Context, trace entities.Trace) ([]e
 		}
 	}
 
-	return allTraces, nil
+	return discoveries, nil
 }
 
 // ProcessTraces processes multiple traces
-func (p *Processor) ProcessTraces(ctx context.Context, traces []entities.Trace) ([]entities.Trace, error) {
-	var allResults []entities.Trace
+func (p *Processor) ProcessTraces(ctx context.Context, traces []entities.Trace) ([]entities.Discovery, error) {
+	var allResults []entities.Discovery
 
 	for _, trace := range traces {
 		results, err := p.ProcessTrace(ctx, trace)
@@ -213,6 +217,11 @@ func (p *Processor) ConfigureDomainRateLimit(domain string, rateLimit float64, b
 	return fmt.Errorf("worker pool not initialized")
 }
 
+type pluginTraceResult struct {
+	PluginName string
+	Traces     []entities.Trace
+}
+
 func newTraceTaskHandler(metricsCollector *metrics.MetricsCollector) workerpool.TaskHandler {
 	return func(ctx context.Context, task *workerpool.Task) (interface{}, error) {
 		if err := ctx.Err(); err != nil {
@@ -248,6 +257,9 @@ func newTraceTaskHandler(metricsCollector *metrics.MetricsCollector) workerpool.
 			}
 		}
 
-		return filtered, nil
+		return pluginTraceResult{
+			PluginName: pluginInterface.String(),
+			Traces:     filtered,
+		}, nil
 	}
 }

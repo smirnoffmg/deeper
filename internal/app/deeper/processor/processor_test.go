@@ -84,6 +84,14 @@ func TestProcessor_ProcessTrace_Concurrency(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, results, pluginCount)
 
+	pluginNames := make(map[string]bool)
+	for _, d := range results {
+		pluginNames[d.PluginName] = true
+		assert.Equal(t, trace, d.Parent)
+		assert.NotEmpty(t, d.Child.Value)
+	}
+	assert.Len(t, pluginNames, pluginCount)
+
 	sequentialTime := time.Duration(pluginCount) * sleepDelay
 	parallelTime := time.Duration((pluginCount+maxWorkers-1)/maxWorkers) * sleepDelay
 	assert.Less(t, elapsed, sequentialTime, "expected parallel execution faster than sequential")

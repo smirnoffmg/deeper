@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ type Engine struct {
 	config    *config.Config
 	processor *processor.Processor
 	metrics   *metrics.MetricsCollector
+	repo      *database.Repository
 }
 
 // NewEngine creates a new trace processing engine
@@ -26,43 +28,55 @@ func NewEngine(cfg *config.Config, metricsCollector *metrics.MetricsCollector, r
 		config:    cfg,
 		processor: processor.NewProcessor(cfg, metricsCollector, repo, cache),
 		metrics:   metricsCollector,
+		repo:      repo,
 	}
 }
 
 // ProcessInput processes an input string and returns all discovered traces
-func (e *Engine) ProcessInput(ctx context.Context, input string) ([]entities.Trace, error) {
-	// Create initial trace from input
+func (e *Engine) ProcessInput(ctx context.Context, input string, scanID int64) ([]entities.Trace, error) {
 	initialTrace := entities.NewTrace(input)
 
-	// Use a stack-based approach for breadth-first processing
+	rootID, err := e.repo.GetOrCreateTrace(initialTrace)
+	if err != nil {
+		return nil, fmt.Errorf("failed to persist root trace: %w", err)
+	}
+	if err := e.repo.InsertEdge(&database.TraceEdge{
+		ChildTraceID: rootID,
+		PluginName:   database.SeedPluginName,
+		ScanID:       scanID,
+		DiscoveredAt: time.Now(),
+	}); err != nil {
+		return nil, fmt.Errorf("failed to persist seed edge: %w", err)
+	}
+
 	stack := []entities.Trace{initialTrace}
 	seen := make(map[entities.Trace]bool)
-	var allTraces []entities.Trace
 
-	// Track processing statistics
+	var allTraces []entities.Trace
 	var processedCount int
 	var errorCount int
 
 	for len(stack) > 0 {
-		// Process traces in batches to avoid memory issues
 		batchSize := min(len(stack), e.config.MaxConcurrency)
 		batch := stack[:batchSize]
 		stack = stack[batchSize:]
 
-		// Process batch concurrently
-		results, err := e.processBatch(ctx, batch)
+		discoveries, err := e.processBatch(ctx, batch)
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to process batch")
 			errorCount++
 			continue
 		}
 
-		// Add new traces to stack and results
-		for _, trace := range results {
-			if !seen[trace] {
-				seen[trace] = true
-				allTraces = append(allTraces, trace)
-				stack = append(stack, trace)
+		if err := e.repo.PersistDiscoveries(scanID, discoveries); err != nil {
+			return nil, fmt.Errorf("failed to persist discoveries: %w", err)
+		}
+
+		for _, d := range discoveries {
+			if !seen[d.Child] {
+				seen[d.Child] = true
+				allTraces = append(allTraces, d.Child)
+				stack = append(stack, d.Child)
 			}
 		}
 
@@ -76,9 +90,9 @@ func (e *Engine) ProcessInput(ctx context.Context, input string) ([]entities.Tra
 }
 
 // processBatch processes a batch of traces concurrently, bounded by MaxConcurrency
-func (e *Engine) processBatch(ctx context.Context, traces []entities.Trace) ([]entities.Trace, error) {
+func (e *Engine) processBatch(ctx context.Context, traces []entities.Trace) ([]entities.Discovery, error) {
 	var (
-		allResults []entities.Trace
+		allResults []entities.Discovery
 		errors     []error
 		mu         sync.Mutex
 		wg         sync.WaitGroup
@@ -112,7 +126,6 @@ func (e *Engine) processBatch(ctx context.Context, traces []entities.Trace) ([]e
 
 	wg.Wait()
 
-	// Log errors but don't fail the entire batch
 	if len(errors) > 0 {
 		log.Warn().Msgf("Encountered %d errors in batch processing", len(errors))
 	}
@@ -120,7 +133,6 @@ func (e *Engine) processBatch(ctx context.Context, traces []entities.Trace) ([]e
 	return allResults, nil
 }
 
-// min returns the minimum of two integers
 func min(a, b int) int {
 	if a < b {
 		return a

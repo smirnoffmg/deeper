@@ -7,16 +7,33 @@ import (
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 )
 
+const SeedPluginName = "__seed__"
+
 // Trace represents a stored trace in the database
 type Trace struct {
 	ID           int64                  `json:"id" db:"id"`
 	Value        string                 `json:"value" db:"value"`
 	Type         entities.TraceType     `json:"type" db:"type"`
 	DiscoveredAt time.Time              `json:"discovered_at" db:"discovered_at"`
-	SourcePlugin string                 `json:"source_plugin" db:"source_plugin"`
 	Metadata     map[string]interface{} `json:"metadata" db:"metadata"`
-	ScanID       *int64                 `json:"scan_id" db:"scan_id"`
-	Depth        int                    `json:"depth" db:"depth"`
+}
+
+// TraceEdge represents a parent→plugin→child discovery link within a scan.
+type TraceEdge struct {
+	ID            int64      `json:"id" db:"id"`
+	ParentTraceID *int64     `json:"parent_trace_id" db:"parent_trace_id"`
+	ChildTraceID  int64      `json:"child_trace_id" db:"child_trace_id"`
+	PluginName    string     `json:"plugin_name" db:"plugin_name"`
+	ScanID        int64      `json:"scan_id" db:"scan_id"`
+	DiscoveredAt  time.Time  `json:"discovered_at" db:"discovered_at"`
+}
+
+// ReachableTrace is a trace reachable from a start node within a hop budget.
+type ReachableTrace struct {
+	TraceID int64              `json:"trace_id"`
+	Value   string             `json:"value"`
+	Type    entities.TraceType `json:"type"`
+	Hops    int                `json:"hops"`
 }
 
 // ScanSession represents a scan session in the database
@@ -42,13 +59,11 @@ type CacheEntry struct {
 
 // TraceQuery represents query parameters for searching traces
 type TraceQuery struct {
-	Type         *entities.TraceType `json:"type,omitempty"`
-	SourcePlugin *string             `json:"source_plugin,omitempty"`
-	ScanID       *int64              `json:"scan_id,omitempty"`
-	FromDate     *time.Time          `json:"from_date,omitempty"`
-	ToDate       *time.Time          `json:"to_date,omitempty"`
-	Limit        int                 `json:"limit"`
-	Offset       int                 `json:"offset"`
+	Type     *entities.TraceType `json:"type,omitempty"`
+	FromDate *time.Time          `json:"from_date,omitempty"`
+	ToDate   *time.Time          `json:"to_date,omitempty"`
+	Limit    int                 `json:"limit"`
+	Offset   int                 `json:"offset"`
 }
 
 // ScanQuery represents query parameters for searching scan sessions
@@ -107,13 +122,10 @@ func (t *Trace) ToEntity() entities.Trace {
 }
 
 // FromEntity converts an entities.Trace to a database Trace
-func FromEntity(trace entities.Trace, sourcePlugin string, scanID *int64, depth int) *Trace {
+func FromEntity(trace entities.Trace) *Trace {
 	return &Trace{
 		Value:        trace.Value,
 		Type:         trace.Type,
-		SourcePlugin: sourcePlugin,
-		ScanID:       scanID,
-		Depth:        depth,
 		DiscoveredAt: time.Now(),
 	}
 }

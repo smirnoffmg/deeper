@@ -257,7 +257,7 @@ We welcome contributions! Please follow these guidelines:
 make deps
 
 # Install pre-commit hooks (runs golangci-lint + go test on each commit)
-pip install pre-commit   # or: brew install pre-commit
+brew install pre-commit
 make pre-commit
 
 # Run hooks manually without committing

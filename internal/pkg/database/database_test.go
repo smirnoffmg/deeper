@@ -57,9 +57,7 @@ func TestRepository_StoreAndGetTrace(t *testing.T) {
 	trace := &Trace{
 		Value:        "test@example.com",
 		Type:         entities.Email,
-		SourcePlugin: "TestPlugin",
 		DiscoveredAt: time.Now(),
-		Depth:        1,
 	}
 
 	// Store the trace
