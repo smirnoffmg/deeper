@@ -55,6 +55,17 @@ func TestDNSResolverPlugin_FollowTrace_LookupError(t *testing.T) {
 	assert.Empty(t, traces)
 }
 
+func TestDNSResolverPlugin_FollowTrace_SkipsWildcard(t *testing.T) {
+	plugin := &DNSResolverPlugin{resolver: &fakeResolver{
+		addrs: []net.IPAddr{{IP: net.ParseIP("1.2.3.4")}},
+	}}
+
+	traces, err := plugin.FollowTrace(entities.Trace{Value: "*.codescoring.ru", Type: entities.Subdomain})
+
+	require.NoError(t, err)
+	assert.Empty(t, traces)
+}
+
 func TestDNSResolverPlugin_String(t *testing.T) {
 	plugin := NewPlugin()
 	assert.Equal(t, "DNSResolverPlugin", plugin.String())

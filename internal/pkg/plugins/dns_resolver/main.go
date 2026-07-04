@@ -3,6 +3,7 @@ package dns_resolver
 import (
 	"context"
 	"net"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
@@ -38,6 +39,10 @@ func (p *DNSResolverPlugin) Register() error {
 
 func (p *DNSResolverPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
 	if trace.Type != InputTraceType {
+		return nil, nil
+	}
+
+	if strings.Contains(trace.Value, "*") {
 		return nil, nil
 	}
 

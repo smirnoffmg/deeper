@@ -7,6 +7,7 @@ import (
 
 	// Import plugins to register them
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/academic_papers"
+	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/contact_crawler"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/coderepos"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/crtsh"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/dns_resolver"

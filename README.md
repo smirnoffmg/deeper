@@ -41,7 +41,7 @@ Plugins implement the `DeeperPlugin` interface and are automatically discovered 
 
 ### Prerequisites
 
-- Go 1.22 or higher
+- Go 1.26 or higher
 - Git
 
 ### Build from Source

@@ -3,6 +3,7 @@ package crtsh
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -20,10 +21,22 @@ func init() {
 	}
 }
 
-type SubdomainPlugin struct{}
+type certFetcher interface {
+	Get(url string) (*http.Response, error)
+}
+
+type httpCertFetcher struct{}
+
+func (httpCertFetcher) Get(url string) (*http.Response, error) {
+	return http.Get(url)
+}
+
+type SubdomainPlugin struct {
+	fetcher certFetcher
+}
 
 func NewPlugin() *SubdomainPlugin {
-	return &SubdomainPlugin{}
+	return &SubdomainPlugin{fetcher: httpCertFetcher{}}
 }
 
 func (g *SubdomainPlugin) Register() error {
@@ -41,15 +54,22 @@ func (g *SubdomainPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, e
 	}
 
 	url := fmt.Sprintf("https://crt.sh/?q=%%25.%s&output=json", trace.Value)
-	resp, err := http.Get(url)
+	resp, err := g.fetcher.Get(url)
 	if err != nil {
-		return nil, err
+		log.Warn().Err(err).Str("domain", trace.Value).Msg("crt.sh request failed, skipping")
+		return nil, nil
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	var entries []CrtShEntry
-	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
-		return nil, err
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Warn().Err(err).Str("domain", trace.Value).Msg("crt.sh response read failed, skipping")
+		return nil, nil
+	}
+
+	entries, ok := decodeEntries(body, trace.Value)
+	if !ok {
+		return nil, nil
 	}
 
 	var newTraces []entities.Trace
@@ -64,6 +84,26 @@ func (g *SubdomainPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, e
 	}
 
 	return newTraces, nil
+}
+
+func decodeEntries(body []byte, domain string) ([]CrtShEntry, bool) {
+	trimmed := strings.TrimSpace(string(body))
+	if trimmed == "" {
+		log.Warn().Str("domain", domain).Msg("crt.sh returned empty response, skipping")
+		return nil, false
+	}
+	if trimmed[0] == '<' {
+		log.Warn().Str("domain", domain).Msg("crt.sh returned HTML instead of JSON, skipping")
+		return nil, false
+	}
+
+	var entries []CrtShEntry
+	if err := json.Unmarshal(body, &entries); err != nil {
+		log.Warn().Err(err).Str("domain", domain).Msg("crt.sh returned invalid JSON, skipping")
+		return nil, false
+	}
+
+	return entries, true
 }
 
 func parseSubdomains(nameValue string) []string {
