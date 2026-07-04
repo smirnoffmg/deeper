@@ -2,7 +2,6 @@ package contact_crawler
 
 import (
 	"context"
-	"net"
 
 	"github.com/rs/zerolog/log"
 	"github.com/smirnoffmg/deeper/internal/pkg/config"
@@ -22,14 +21,12 @@ func init() {
 
 type ContactCrawlerPlugin struct {
 	fetcher      pageFetcher
-	resolver     ipResolver
 	domainBudget *domainBudget
 }
 
 func NewPlugin() *ContactCrawlerPlugin {
 	return &ContactCrawlerPlugin{
 		fetcher:      deeperhttp.NewClient(config.LoadConfig()),
-		resolver:     net.DefaultResolver,
 		domainBudget: newDomainBudget(maxPagesPerRegistrableDomainPerProcess),
 	}
 }
@@ -46,7 +43,7 @@ func (p *ContactCrawlerPlugin) FollowTrace(trace entities.Trace) ([]entities.Tra
 	}
 
 	seedURL := normalizeURL(trace.Value)
-	c := newCrawler(p.fetcher, p.resolver, trace.Value, p.domainBudget)
+	c := newCrawler(p.fetcher, trace.Value, p.domainBudget)
 	return c.crawl(context.Background(), seedURL)
 }
 

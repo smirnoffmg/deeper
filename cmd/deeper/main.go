@@ -10,8 +10,10 @@ import (
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/contact_crawler"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/coderepos"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/crtsh"
+	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/dns_records"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/dns_resolver"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/facebook"
+	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/ip_intel"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/social_profiles"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/subdomains"
 )

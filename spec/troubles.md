@@ -5,6 +5,18 @@ Findings from a full-repo analysis on 2026-07-04 (commit `0e6da95`, branch
 how to verify the fix. Work top to bottom — #1 blocks CI and should land
 before anything else.
 
+**Status as of this pass: all 10 items resolved.** #1 (`.gitignore`), #3
+(worker pool concurrency), #4 (orphaned `PluginRegistry`), and #5 (three
+unregistered plugins) were fixed externally earlier in this effort. #2
+(GoReleaser/CGO database outage) was fixed by removing `.goreleaser.yml`/
+`.github/workflows/release.yml`. #6 (lint) is now clean (`golangci-lint run
+./...` → 0 issues). #7 (README staleness) was already corrected. #8
+(untracked files) — `TESTING.md`/`cache_test.go` are committed, no untracked
+files remain. #9 (`SocialProfilesPlugin` registration failure) and #10
+(worker pool result cross-attribution race) were found by independently
+verifying `codescoring.ru` scan results against ground truth, and fixed in
+this pass.
+
 ---
 
 ## 1. `.gitignore` swallows real source files under `internal/app/deeper/` [CRITICAL]
@@ -256,6 +268,87 @@ flat `internal/{config,display,engine,...}` layout, not the current
 `README.md` to reflect the actual current layout and shipped features.
 
 **Verify:** manual read-through; no automated check.
+
+---
+
+## 9. `SocialProfilesPlugin` fails to register — Sherlock data source moved and its schema changed [HIGH] — RESOLVED
+
+**Problem:** `internal/pkg/plugins/social_profiles/main.go:119` fetched
+`https://raw.githubusercontent.com/sherlock-project/sherlock/master/sherlock/resources/data.json`,
+which 404s — upstream renamed the Python package directory from `sherlock/`
+to `sherlock_project/` (likely a PyPI naming-conflict fix), moving the file
+to `sherlock_project/resources/data.json`. Confirmed live during the
+`codescoring.ru` smoke test: `Failed to register plugin SocialProfilesPlugin`
+with `invalid character ':' after top-level value` (the literal text
+"404: Not Found" isn't valid JSON). Fixing the URL alone surfaced a second,
+independent problem: the corrected `data.json` now has a top-level
+`"$schema": "data.schema.json"` metadata key, which the naive
+`map[string]SherlockEntry` unmarshal chokes on (`json: cannot unmarshal
+string into Go value of type struct {...}`) since `$schema`'s value is a
+string, not a site-entry object.
+
+**Fix (applied):**
+1. Updated the URL to `sherlock_project/resources/data.json`.
+2. Extracted a pure `parseSherlockData(data []byte) (map[string]SherlockEntry, error)`
+   function that unmarshals into `map[string]json.RawMessage` first, then
+   decodes each value into `SherlockEntry` individually, silently skipping
+   any key whose value doesn't decode as a site entry (currently just
+   `$schema`, robust against future non-entry metadata keys too).
+3. Added `main_test.go` (TDD: written failing first) covering the
+   `$schema`-skip case and the existing string/list `errorMsg` polymorphism.
+
+**Verify:** `go test ./internal/pkg/plugins/social_profiles/...` passes;
+`./build/deeper plugins list` shows `SocialProfilesPlugin` under `username`
+with no registration error in the logs (confirmed: 481 entries loaded).
+
+---
+
+## 10. Worker pool result queue has no per-caller correlation — concurrent scans silently cross-attribute results [CRITICAL] — RESOLVED
+
+**Problem:** Found by independently re-deriving DNS data for `codescoring.ru`
+(direct `socket.getaddrinfo` lookups + crt.sh) and diffing against what
+`deeper` persisted in `trace_edges`. Several subdomains had *someone else's*
+IP address recorded against them — e.g. `docs.codescoring.ru`'s real IP is
+`185.55.56.154`, but `deeper` recorded `135.181.176.35` (actually
+`registry-zero.codescoring.ru`'s IP) and `81.163.23.76` (actually
+`files.codescoring.ru`'s IP) against it instead.
+
+Root cause: `Processor.ProcessTrace` (`processor.go`) submits N tasks to the
+single shared `Processor.workerPool` and then calls `wp.GetResult(ctx)`
+exactly N times, assuming those N results are its own. But
+`WorkerPool.GetResult` (`workerpool.go:195`) just pulls the next item off one
+pool-wide `resultQueue` channel with **no correlation to which caller
+submitted which task** — `TaskResult.TaskID` carries enough information to
+correlate, but nothing reads it. This was harmless back when `ProcessTrace`
+calls were sequential, but `Engine.processBatch`'s goroutine fan-out (the
+"real concurrency" fix earlier in this effort) now calls `ProcessTrace`
+concurrently for many different traces against the same `Processor`
+instance — so one trace's plugin results get silently stolen by whichever
+concurrent `ProcessTrace` call happens to call `GetResult()` next. Confirmed
+with a deterministic reproduction: 20 goroutines each calling `ProcessTrace`
+for a distinct trace, with a plugin that echoes back its own input — results
+came back rotated/shuffled across goroutines every run.
+
+This is a correctness bug in the exact feature this session was building —
+the discovery-graph provenance — corrupted specifically under the
+concurrency mode that is now the default execution path.
+
+**Fix (applied):**
+1. Added `Task.ReplyTo chan *TaskResult` (`workerpool.go`) — when set,
+   `Worker.processTask` sends the result there instead of the shared
+   `resultQueue`, so each caller gets only its own results. Callers that
+   don't set it keep the old shared-queue/`GetResult()` behavior unchanged.
+2. `Processor.ProcessTrace` now creates a per-call, buffered `replyTo`
+   channel, attaches it to every task it submits, and collects results by
+   reading that channel directly instead of calling `wp.GetResult(ctx)`.
+3. Added `TestProcessor_ConcurrentProcessTrace_NoCrossAttribution` —
+   regression test reproducing the 20-goroutine echo scenario above.
+
+**Verify:** `go test -race ./...` green, including the new regression test
+(run repeatedly — the original bug reproduced on effectively every run, not
+intermittently); re-ran `./build/deeper scan codescoring.ru` and confirmed
+every `DNSResolverPlugin` edge in `trace_edges` now matches independently
+verified DNS data exactly.
 
 ---
 

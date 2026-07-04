@@ -388,3 +388,47 @@ func TestWorkerPool_ConcurrentProcessing(t *testing.T) {
 
 	assert.Equal(t, 10, resultCount)
 }
+
+// TestWorkerPool_ReplyTo_SlowTaskStillDelivers is a regression test for a bug
+// found live against codescoring.ru: a CrtShPlugin call ran longer than
+// TaskTimeout (plugins' FollowTrace takes no context, so a slow call can't be
+// aborted early — the per-task ctx just expires while the call is still
+// blocked). Once the handler finally returned, processTask's send to
+// task.ReplyTo raced ctx.Done() in a select, and could nondeterministically
+// drop the result instead of delivering it — even though ReplyTo is always
+// pre-sized by the caller to guarantee the send never blocks. A dropped
+// result meant the caller's collection loop hung forever waiting for it,
+// bounded only by the whole-scan timeout (5 minutes), discarding an entire
+// scan's results in the process.
+func TestWorkerPool_ReplyTo_SlowTaskStillDelivers(t *testing.T) {
+	taskTimeout := 50 * time.Millisecond
+	handlerDelay := 200 * time.Millisecond
+
+	config := &Config{
+		MaxWorkers:       1,
+		QueueSize:        10,
+		DefaultRateLimit: rate.Limit(100),
+		DefaultBurst:     10,
+		TaskTimeout:      taskTimeout,
+		TaskHandler: func(ctx context.Context, task *Task) (interface{}, error) {
+			time.Sleep(handlerDelay)
+			return "slow-result", nil
+		},
+	}
+
+	wp := NewWorkerPool(config)
+	defer func() { _ = wp.Shutdown(5 * time.Second) }()
+
+	replyTo := make(chan *TaskResult, 1)
+	task := &Task{ID: "slow-task", Payload: "payload", ReplyTo: replyTo}
+
+	require.NoError(t, wp.Submit(context.Background(), task))
+
+	select {
+	case result := <-replyTo:
+		require.NotNil(t, result)
+		assert.Equal(t, "slow-result", result.Result)
+	case <-time.After(2 * time.Second):
+		t.Fatal("result was never delivered to ReplyTo — regressed to the dropped-result bug")
+	}
+}

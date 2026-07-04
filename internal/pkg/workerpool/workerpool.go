@@ -17,6 +17,13 @@ type Task struct {
 	Payload  interface{}
 	Priority int
 	Created  time.Time
+
+	// ReplyTo, if set, receives this task's result directly instead of the
+	// pool-wide result queue. Callers that submit a batch of tasks and expect
+	// to collect exactly their own results (e.g. Processor.ProcessTrace) must
+	// set this — GetResult()'s shared queue has no per-caller correlation, so
+	// concurrent submitters would otherwise consume each other's results.
+	ReplyTo chan *TaskResult
 }
 
 // TaskResult represents the result of processing a task
@@ -349,7 +356,22 @@ func (w *Worker) processTask(task *Task) {
 	// Record the result
 	w.pool.recordTaskResult(taskResult)
 
-	// Send result to result queue
+	if task.ReplyTo != nil {
+		// Unconditional send, not gated on ctx: callers size ReplyTo's buffer to
+		// exactly the number of tasks they submit (see Processor.ProcessTrace),
+		// so this never blocks. Gating it on the per-task ctx used to race the
+		// two ready cases against each other whenever a plugin call (FollowTrace
+		// takes no context, so it can't be aborted early) ran longer than
+		// TaskTimeout: the result was computed and ready to send, but the select
+		// could still nondeterministically pick ctx.Done() and silently drop it,
+		// leaving the caller's collection loop blocked waiting for a result that
+		// would never arrive — confirmed live when a slow CrtShPlugin call hung
+		// an entire scan until the outer scan-wide timeout fired.
+		task.ReplyTo <- taskResult
+		return
+	}
+
+	// Send result to the shared result queue
 	select {
 	case w.pool.resultQueue <- taskResult:
 	case <-ctx.Done():

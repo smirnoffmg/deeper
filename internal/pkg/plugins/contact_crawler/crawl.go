@@ -66,17 +66,15 @@ func (b *domainBudget) trySpend(host string) bool {
 
 type crawler struct {
 	fetcher      pageFetcher
-	sites        *siteChecker
 	domainBudget *domainBudget
 	seedHost     string
 	maxDepth     int
 	maxPages     int
 }
 
-func newCrawler(fetcher pageFetcher, resolver ipResolver, seedHost string, domainBudget *domainBudget) *crawler {
+func newCrawler(fetcher pageFetcher, seedHost string, domainBudget *domainBudget) *crawler {
 	return &crawler{
 		fetcher:      fetcher,
-		sites:        newSiteChecker(resolver),
 		domainBudget: domainBudget,
 		seedHost:     seedHost,
 		maxDepth:     maxDepthPerCall,
@@ -108,7 +106,7 @@ func (c *crawler) crawl(ctx context.Context, seedURL string) ([]entities.Trace, 
 		}
 
 		host := parsed.Hostname()
-		if !c.sites.sameSite(c.seedHost, host) {
+		if !sameSite(c.seedHost, host) {
 			continue
 		}
 		if !c.domainBudget.trySpend(host) {
@@ -150,7 +148,7 @@ func (c *crawler) crawl(ctx context.Context, seedURL string) ([]entities.Trace, 
 			if err != nil || linkParsed.Host == "" {
 				continue
 			}
-			if !c.sites.sameSite(c.seedHost, linkParsed.Hostname()) {
+			if !sameSite(c.seedHost, linkParsed.Hostname()) {
 				continue
 			}
 

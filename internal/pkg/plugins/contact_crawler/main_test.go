@@ -73,28 +73,15 @@ func (f *fakePageFetcher) fetchCount() int {
 	return len(f.fetchLog)
 }
 
-func testResolver() *fakeIPResolver {
-	ip := net.ParseIP("185.55.56.154")
-	otherIP := net.ParseIP("10.0.0.1")
-	return &fakeIPResolver{ips: map[string][]net.IP{
-		"codescoring.ru":          {ip},
-		"www.codescoring.ru":      {ip},
-		"registry.codescoring.ru": {ip},
-		"page":                    {ip},
-		"evil.com":                {otherIP},
-	}}
-}
-
-func testPlugin(fetcher pageFetcher, resolver ipResolver) *ContactCrawlerPlugin {
+func testPlugin(fetcher pageFetcher) *ContactCrawlerPlugin {
 	return &ContactCrawlerPlugin{
 		fetcher:      fetcher,
-		resolver:     resolver,
 		domainBudget: newDomainBudget(maxPagesPerRegistrableDomainPerProcess),
 	}
 }
 
 func TestContactCrawlerPlugin_FollowTrace_WrongType(t *testing.T) {
-	plugin := testPlugin(newFakePageFetcher(), testResolver())
+	plugin := testPlugin(newFakePageFetcher())
 
 	traces, err := plugin.FollowTrace(entities.Trace{Value: "x", Type: entities.Email})
 
@@ -109,7 +96,7 @@ func TestContactCrawlerPlugin_FollowTrace_DedupesEmail(t *testing.T) {
 		<a href="mailto:info@codescoring.ru">mail</a>
 	</body></html>`)
 
-	plugin := testPlugin(fetcher, testResolver())
+	plugin := testPlugin(fetcher)
 	traces, err := plugin.FollowTrace(entities.Trace{Value: "codescoring.ru", Type: entities.Domain})
 
 	require.NoError(t, err)
@@ -122,7 +109,7 @@ func TestContactCrawlerPlugin_FollowTrace_SeedFetchError(t *testing.T) {
 	fetcher := newFakePageFetcher()
 	fetcher.setSeedError(errors.New("connection refused"))
 
-	plugin := testPlugin(fetcher, testResolver())
+	plugin := testPlugin(fetcher)
 	traces, err := plugin.FollowTrace(entities.Trace{Value: "codescoring.ru", Type: entities.Domain})
 
 	require.NoError(t, err)
@@ -139,7 +126,7 @@ func TestContactCrawlerPlugin_FollowTrace_MidCrawlErrorContinues(t *testing.T) {
 	fetcher.setError("https://codescoring.ru/about", errors.New("timeout"))
 	fetcher.setPage("https://codescoring.ru/contact", `<html><body><a href="tel:+1-555-123-4567">call</a></body></html>`)
 
-	plugin := testPlugin(fetcher, testResolver())
+	plugin := testPlugin(fetcher)
 	traces, err := plugin.FollowTrace(entities.Trace{Value: "codescoring.ru", Type: entities.Domain})
 
 	require.NoError(t, err)
@@ -162,7 +149,7 @@ func TestContactCrawlerPlugin_FollowTrace_ExternalHostNotFetched(t *testing.T) {
 	</body></html>`)
 	fetcher.setPage("https://evil.com/phish", `<html><body>should not fetch</body></html>`)
 
-	plugin := testPlugin(fetcher, testResolver())
+	plugin := testPlugin(fetcher)
 	_, err := plugin.FollowTrace(entities.Trace{Value: "codescoring.ru", Type: entities.Domain})
 
 	require.NoError(t, err)
@@ -173,7 +160,7 @@ func TestContactCrawlerPlugin_FollowTrace_MalformedHTML(t *testing.T) {
 	fetcher := newFakePageFetcher()
 	fetcher.setPage("https://codescoring.ru/", `<html><body><p>reach us at help@codescoring.ru<div`)
 
-	plugin := testPlugin(fetcher, testResolver())
+	plugin := testPlugin(fetcher)
 	traces, err := plugin.FollowTrace(entities.Trace{Value: "codescoring.ru", Type: entities.Domain})
 
 	require.NoError(t, err)
@@ -188,7 +175,6 @@ func TestContactCrawlerPlugin_String(t *testing.T) {
 func TestContactCrawlerPlugin_SharedDomainBudget(t *testing.T) {
 	budget := newDomainBudget(3)
 	fetcher := newFakePageFetcher()
-	resolver := testResolver()
 
 	pageHTML := `<html><body><p>user@codescoring.ru</p><a href="/next">next</a></body></html>`
 	fetcher.setPage("https://registry.codescoring.ru/", pageHTML)
@@ -198,7 +184,6 @@ func TestContactCrawlerPlugin_SharedDomainBudget(t *testing.T) {
 
 	plugin := &ContactCrawlerPlugin{
 		fetcher:      fetcher,
-		resolver:     resolver,
 		domainBudget: budget,
 	}
 

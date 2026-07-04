@@ -114,9 +114,29 @@ func NewSocialProfilesPlugin() *SocialProfilesPlugin {
 	return &SocialProfilesPlugin{}
 }
 
+// parseSherlockData decodes sherlock's data.json, skipping top-level keys
+// that aren't site entries (e.g. the "$schema" metadata key added upstream).
+func parseSherlockData(data []byte) (map[string]SherlockEntry, error) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+
+	entries := make(map[string]SherlockEntry, len(raw))
+	for name, entryData := range raw {
+		var entry SherlockEntry
+		if err := json.Unmarshal(entryData, &entry); err != nil {
+			continue
+		}
+		entries[name] = entry
+	}
+
+	return entries, nil
+}
+
 func (g *SocialProfilesPlugin) Register() error {
 	// get latest data from sherlock
-	jsonFileUrl := "https://raw.githubusercontent.com/sherlock-project/sherlock/master/sherlock/resources/data.json"
+	jsonFileUrl := "https://raw.githubusercontent.com/sherlock-project/sherlock/master/sherlock_project/resources/data.json"
 
 	resp, err := http.Get(jsonFileUrl)
 
@@ -132,9 +152,8 @@ func (g *SocialProfilesPlugin) Register() error {
 		return err
 	}
 
-	sherlockEntries := make(map[string]SherlockEntry)
-
-	if err := json.Unmarshal(jsonFile, &sherlockEntries); err != nil {
+	sherlockEntries, err := parseSherlockData(jsonFile)
+	if err != nil {
 		return err
 	}
 

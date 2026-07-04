@@ -1,6 +1,8 @@
 # Spec: `contact_crawler` plugin — extract contact traces from crawled pages
 
-Status: planned, not yet implemented. Companion to `spec/troubles.md` (bug list) — this is a new-feature spec.
+Status: implemented (`internal/pkg/plugins/contact_crawler/`). Companion to `spec/troubles.md` (bug list) — this is a new-feature spec.
+
+**Post-implementation correction**: an earlier version of this code scoped `sameSite` by DNS IP-address overlap instead of registrable-domain comparison. That let unrelated domains sharing infrastructure (e.g. sites behind the same CDN/shared host) get treated as in-scope, and could wrongly exclude legitimate same-domain subdomains resolving to different IPs. Fixed to compare `registrableDomain(seed) == registrableDomain(candidate)` as originally specified below; the `ipResolver`/`siteChecker` machinery was removed.
 
 ## Context
 

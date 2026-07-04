@@ -87,6 +87,12 @@ func (p *Processor) ProcessTrace(ctx context.Context, trace entities.Trace) ([]e
 	var discoveries []entities.Discovery
 	var allErrors []error
 
+	// Each call gets its own reply channel: the pool's shared result queue has
+	// no per-caller correlation, so concurrent ProcessTrace calls (as driven by
+	// engine.processBatch's goroutine fan-out) would otherwise consume results
+	// meant for each other's traces.
+	replyTo := make(chan *workerpool.TaskResult, len(plugins))
+
 	// Submit tasks to worker pool
 	submittedTasks := 0
 	for _, plugin := range plugins {
@@ -108,6 +114,7 @@ func (p *Processor) ProcessTrace(ctx context.Context, trace entities.Trace) ([]e
 				PluginKey: pluginInterface.String(),
 				Plugin:    pluginInterface,
 			},
+			ReplyTo: replyTo,
 		}
 
 		// Submit task to worker pool
@@ -120,15 +127,13 @@ func (p *Processor) ProcessTrace(ctx context.Context, trace entities.Trace) ([]e
 		submittedTasks++
 	}
 
-	// Collect results from worker pool
+	// Collect results from this call's own reply channel
 	for i := 0; i < submittedTasks; i++ {
-		result, err := p.workerPool.GetResult(ctx)
-		if err != nil {
-			if err == context.Canceled {
-				return discoveries, ctx.Err()
-			}
-			allErrors = append(allErrors, err)
-			continue
+		var result *workerpool.TaskResult
+		select {
+		case result = <-replyTo:
+		case <-ctx.Done():
+			return discoveries, ctx.Err()
 		}
 
 		if result.Error != nil {

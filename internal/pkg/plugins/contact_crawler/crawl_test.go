@@ -3,7 +3,6 @@ package contact_crawler
 import (
 	"errors"
 	"fmt"
-	"net"
 	"strings"
 	"testing"
 
@@ -19,7 +18,7 @@ func TestCrawler_FollowsLinksWithinBudget(t *testing.T) {
 	</body></html>`)
 	fetcher.setPage("https://codescoring.ru/about", `<html><body><p>about@codescoring.ru</p></body></html>`)
 
-	c := newCrawler(fetcher, testResolver(), "codescoring.ru", newDomainBudget(60))
+	c := newCrawler(fetcher, "codescoring.ru", newDomainBudget(60))
 	traces, err := c.crawl(t.Context(), "https://codescoring.ru/")
 
 	require.NoError(t, err)
@@ -40,7 +39,7 @@ func TestCrawler_StopsAtMaxPages(t *testing.T) {
 	links.WriteString(`</body></html>`)
 	fetcher.setPage("https://codescoring.ru/", links.String())
 
-	c := newCrawler(fetcher, testResolver(), "codescoring.ru", newDomainBudget(60))
+	c := newCrawler(fetcher, "codescoring.ru", newDomainBudget(60))
 	_, err := c.crawl(t.Context(), "https://codescoring.ru/")
 
 	require.NoError(t, err)
@@ -54,7 +53,7 @@ func TestCrawler_DoesNotExceedMaxDepth(t *testing.T) {
 	fetcher.setPage("https://codescoring.ru/d2", `<html><body><a href="/d3">d3</a></body></html>`)
 	fetcher.setPage("https://codescoring.ru/d3", `<html><body>deep</body></html>`)
 
-	c := newCrawler(fetcher, testResolver(), "codescoring.ru", newDomainBudget(60))
+	c := newCrawler(fetcher, "codescoring.ru", newDomainBudget(60))
 	_, err := c.crawl(t.Context(), "https://codescoring.ru/")
 
 	require.NoError(t, err)
@@ -64,21 +63,30 @@ func TestCrawler_DoesNotExceedMaxDepth(t *testing.T) {
 	}
 }
 
-func TestCrawler_SkipsDifferentIPSubdomain(t *testing.T) {
-	ip := testResolver().ips["codescoring.ru"][0]
-	otherIP := testResolver().ips["evil.com"][0]
-	resolver := &fakeIPResolver{ips: map[string][]net.IP{
-		"codescoring.ru":       {ip},
-		"other.codescoring.ru": {otherIP},
-	}}
-
+func TestCrawler_FollowsSameRegistrableDomainSubdomain(t *testing.T) {
 	fetcher := newFakePageFetcher()
 	fetcher.setPage("https://codescoring.ru/", `<html><body>
-		<a href="https://other.codescoring.ru/secret">other</a>
+		<a href="https://other.codescoring.ru/page">other</a>
 	</body></html>`)
-	fetcher.setPage("https://other.codescoring.ru/secret", `<html><body>secret</body></html>`)
+	fetcher.setPage("https://other.codescoring.ru/page", `<html><body>info@codescoring.ru</body></html>`)
 
-	c := newCrawler(fetcher, resolver, "codescoring.ru", newDomainBudget(60))
+	c := newCrawler(fetcher, "codescoring.ru", newDomainBudget(60))
+	_, err := c.crawl(t.Context(), "https://codescoring.ru/")
+
+	require.NoError(t, err)
+	assert.Equal(t, 2, fetcher.fetchCount())
+}
+
+func TestCrawler_SkipsSuffixTrapDomain(t *testing.T) {
+	fetcher := newFakePageFetcher()
+	fetcher.setPage("https://codescoring.ru/", `<html><body>
+		<a href="https://codescoring.ru.evil.com/secret">evil-subdomain</a>
+		<a href="https://evilcodescoring.ru/secret">evil-prefix</a>
+	</body></html>`)
+	fetcher.setPage("https://codescoring.ru.evil.com/secret", `<html><body>should not fetch</body></html>`)
+	fetcher.setPage("https://evilcodescoring.ru/secret", `<html><body>should not fetch</body></html>`)
+
+	c := newCrawler(fetcher, "codescoring.ru", newDomainBudget(60))
 	_, err := c.crawl(t.Context(), "https://codescoring.ru/")
 
 	require.NoError(t, err)
@@ -90,7 +98,7 @@ func TestCrawler_SeedHTTPSFallbackToHTTP(t *testing.T) {
 	fetcher.errors["https://codescoring.ru/"] = errors.New("tls: certificate error")
 	fetcher.setPage("http://codescoring.ru/", `<html><body><p>help@codescoring.ru</p></body></html>`)
 
-	c := newCrawler(fetcher, testResolver(), "codescoring.ru", newDomainBudget(60))
+	c := newCrawler(fetcher, "codescoring.ru", newDomainBudget(60))
 	traces, err := c.crawl(t.Context(), "https://codescoring.ru/")
 
 	require.NoError(t, err)
@@ -102,7 +110,7 @@ func TestCrawler_SeedUnavailableReturnsNoError(t *testing.T) {
 	fetcher := newFakePageFetcher()
 	fetcher.setSeedError(errors.New("connection refused"))
 
-	c := newCrawler(fetcher, testResolver(), "codescoring.ru", newDomainBudget(60))
+	c := newCrawler(fetcher, "codescoring.ru", newDomainBudget(60))
 	traces, err := c.crawl(t.Context(), "https://codescoring.ru/")
 
 	require.NoError(t, err)
