@@ -14,10 +14,10 @@ import (
 )
 
 const (
-	defaultMaxDepth  = 2
-	defaultMaxPages  = 20
-	maxPagesPerCall  = defaultMaxPages
-	maxDepthPerCall  = defaultMaxDepth
+	defaultMaxDepth = 2
+	defaultMaxPages = 20
+	maxPagesPerCall = defaultMaxPages
+	maxDepthPerCall = defaultMaxDepth
 )
 
 type pageFetcher interface {
@@ -124,7 +124,7 @@ func (c *crawler) crawl(ctx context.Context, seedURL string) ([]entities.Trace, 
 		}
 
 		pagesFetched++
-		pageTraces, links := parsePage(body, finalURL)
+		pageTraces, links := parsePage(body, finalURL, c.seedHost)
 		for _, trace := range pageTraces {
 			key := string(trace.Type) + "\x00" + trace.Value
 			if _, ok := seenTraces[key]; ok {
@@ -186,7 +186,7 @@ func (c *crawler) fetchURL(ctx context.Context, pageURL string, tryHTTPFallback 
 	return nil, pageURL, lastErr
 }
 
-func parsePage(body []byte, baseURL string) ([]entities.Trace, []string) {
+func parsePage(body []byte, baseURL, seedHost string) ([]entities.Trace, []string) {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(body)))
 	if err != nil {
 		return nil, nil
@@ -225,6 +225,9 @@ func parsePage(body []byte, baseURL string) ([]entities.Trace, []string) {
 			return
 		}
 		if trace, ok := socialLinkTrace(href); ok {
+			if trace.Type == entities.Github && !githubOwnerInScope(href, seedHost) {
+				return
+			}
 			traces = append(traces, trace)
 			return
 		}
@@ -237,6 +240,20 @@ func parsePage(body []byte, baseURL string) ([]entities.Trace, []string) {
 	})
 
 	return traces, links
+}
+
+// githubOwnerInScope reports whether a github.com link's owner plausibly
+// belongs to the site being crawled. GitHub links that fail this check are
+// dropped entirely (not emitted as an entities.Github trace at all), since
+// github_identity mines any such trace's full commit history — surfacing
+// real names and personal emails of an unrelated project's contributors,
+// confirmed live for a target's page merely linking an open-source project.
+func githubOwnerInScope(href, seedHost string) bool {
+	owner, ok := githubRepoOwner(href)
+	if !ok {
+		return false
+	}
+	return ownerMatchesTarget(owner, seedHost)
 }
 
 func resolveLink(base *url.URL, href string) (string, bool) {

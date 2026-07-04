@@ -18,6 +18,10 @@ type Config struct {
 
 	// Worker Pool Configuration
 	WorkerPoolConfig WorkerPoolConfig
+
+	// Optional plugin credentials (empty = unauthenticated requests)
+	GravatarAPIKey string
+	GitHubToken    string
 }
 
 // WorkerPoolConfig holds worker pool specific configuration
@@ -181,6 +185,14 @@ func LoadConfig() *Config {
 
 	// Load worker pool configuration
 	loadWorkerPoolConfig(config)
+
+	if gravatarAPIKey := os.Getenv("DEEPER_GRAVATAR_API_KEY"); gravatarAPIKey != "" {
+		config.GravatarAPIKey = gravatarAPIKey
+	}
+
+	if githubToken := os.Getenv("DEEPER_GITHUB_TOKEN"); githubToken != "" {
+		config.GitHubToken = githubToken
+	}
 
 	return config
 }

@@ -54,3 +54,50 @@ func TestSameSite(t *testing.T) {
 		})
 	}
 }
+
+func TestOwnerMatchesTarget(t *testing.T) {
+	tests := []struct {
+		name     string
+		owner    string
+		seedHost string
+		want     bool
+	}{
+		{name: "exact match", owner: "CodeScoring", seedHost: "codescoring.ru", want: true},
+		{name: "case insensitive", owner: "codescoring", seedHost: "CodeScoring.ru", want: true},
+		{name: "match from subdomain seed", owner: "CodeScoring", seedHost: "docs.codescoring.ru", want: true},
+		{name: "owner contains label", owner: "codescoring-labs", seedHost: "codescoring.ru", want: true},
+		{name: "unrelated third-party repo", owner: "pgbouncer", seedHost: "codescoring.ru", want: false},
+		{name: "unrelated repo owned by a person", owner: "torvalds", seedHost: "codescoring.ru", want: false},
+		{name: "empty owner", owner: "", seedHost: "codescoring.ru", want: false},
+		{name: "invalid seed host", owner: "codescoring", seedHost: "not a host", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, ownerMatchesTarget(tt.owner, tt.seedHost))
+		})
+	}
+}
+
+func TestGithubRepoOwner(t *testing.T) {
+	tests := []struct {
+		name   string
+		href   string
+		want   string
+		wantOK bool
+	}{
+		{name: "repo URL", href: "https://github.com/CodeScoring/awesome-open-source-licensing", want: "CodeScoring", wantOK: true},
+		{name: "trailing slash", href: "https://github.com/owner/repo/", want: "owner", wantOK: true},
+		{name: "org root", href: "https://github.com/CodeScoring", want: "CodeScoring", wantOK: true},
+		{name: "malformed", href: "not-a-url", want: "", wantOK: false},
+		{name: "no path", href: "https://github.com/", want: "", wantOK: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := githubRepoOwner(tt.href)
+			assert.Equal(t, tt.wantOK, ok)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

@@ -1,6 +1,39 @@
 # Spec: identity-enrichment plugins — turn emails and GitHub links into people
 
-Status: planned, not yet implemented.
+Status: implemented (`internal/pkg/plugins/gravatar/`, `internal/pkg/plugins/github_identity/`).
+
+**Post-implementation fix**: live-testing against `codescoring.ru` showed the
+plugins work exactly as designed — but `github_identity` mined *every*
+`entities.Github` trace it received, and `contact_crawler` was extracting a
+`Github` trace for every github.com link on a page regardless of who owned
+the repo. `docs.codescoring.ru` happened to link an unrelated open-source
+project (`pgbouncer/pgbouncer`) in passing, and `github_identity` dutifully
+mined that project's real commit history — surfacing 29 actual people's
+names, personal emails, and GitHub usernames, none of whom have any
+relationship to CodeScoring. `SocialProfilesPlugin` then fanned those 29
+usernames out across its full site list, producing 634 additional edges —
+traces went from ~41 to 1,419 in one run, almost entirely uninvolved
+third-party data.
+
+**Fix (applied)**: `contact_crawler` (the only source of `entities.Github`
+traces) now only extracts a GitHub link as a trace if its owner plausibly
+matches the site being crawled — reusing `host.go`'s existing registrable-
+domain scoping (e.g. `codescoring.ru` -> label `codescoring`, compared
+case-insensitively against the repo owner, with substring containment to
+tolerate minor naming variations like `codescoring-labs`). Unrelated repos
+(`pgbouncer/pgbouncer`) are dropped entirely at the point of discovery,
+before `entities.Github` ever reaches `github_identity`; the target's own
+repo (`CodeScoring/awesome-open-source-licensing`) still passes through and
+gets mined normally. Verified live: traces dropped from 1,419 back to 121,
+zero mentions of the unrelated project, while the intended "closes the loop"
+chain still worked (real contributors' usernames correctly cascaded into
+`CodeRepositoriesPlugin` finding their other repos).
+
+This fix lives in `contact_crawler`, not `github_identity`, because
+`DeeperPlugin.FollowTrace(trace entities.Trace)` gives a plugin no visibility
+into which site discovered a trace or what the scan's root target is —
+`contact_crawler` is the only place in the pipeline that has both the seed
+host and the raw link at the same time.
 
 ## Context
 

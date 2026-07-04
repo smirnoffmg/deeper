@@ -128,3 +128,23 @@ func TestLoadConfigWithInvalidValues(t *testing.T) {
 		t.Errorf("Expected RetryDelay to fall back to 1s, got %v", cfg.RetryDelay)
 	}
 }
+
+func TestLoadConfigPluginCredentials(t *testing.T) {
+	_ = os.Setenv("DEEPER_GRAVATAR_API_KEY", "gravatar-test-key")
+	_ = os.Setenv("DEEPER_GITHUB_TOKEN", "github-test-token")
+
+	defer func() {
+		_ = os.Unsetenv("DEEPER_GRAVATAR_API_KEY")
+		_ = os.Unsetenv("DEEPER_GITHUB_TOKEN")
+	}()
+
+	cfg := LoadConfig()
+
+	if cfg.GravatarAPIKey != "gravatar-test-key" {
+		t.Errorf("Expected GravatarAPIKey to be set, got %q", cfg.GravatarAPIKey)
+	}
+
+	if cfg.GitHubToken != "github-test-token" {
+		t.Errorf("Expected GitHubToken to be set, got %q", cfg.GitHubToken)
+	}
+}

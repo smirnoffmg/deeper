@@ -130,11 +130,11 @@ func TestParsePage_ExtractsContactsAndLinks(t *testing.T) {
 		<p>hello@example.com</p>
 		<a href="mailto:hello@example.com">mail</a>
 		<a href="tel:+15551234567">call</a>
-		<a href="https://github.com/acme">gh</a>
+		<a href="https://github.com/example">gh</a>
 		<a href="/internal">in</a>
 	</body></html>`)
 
-	traces, links := parsePage(body, "https://example.com/")
+	traces, links := parsePage(body, "https://example.com/", "example.com")
 	require.NotEmpty(t, traces)
 	require.NotEmpty(t, links)
 
@@ -146,4 +146,37 @@ func TestParsePage_ExtractsContactsAndLinks(t *testing.T) {
 	assert.Contains(t, types, entities.Phone)
 	assert.Contains(t, types, entities.Github)
 	assert.Contains(t, links[0], "https://example.com/internal")
+}
+
+// TestParsePage_DropsUnrelatedGithubRepo is a regression test for a scope
+// bug found live against codescoring.ru: a page linking to an unrelated
+// open-source project's GitHub repo (pgbouncer/pgbouncer) caused
+// github_identity to mine that project's real commit authors and fan them
+// out across dozens of social platforms via SocialProfilesPlugin. A GitHub
+// link only becomes a discoverable trace if its owner plausibly matches the
+// site being crawled.
+func TestParsePage_DropsUnrelatedGithubRepo(t *testing.T) {
+	body := []byte(`<html><body>
+		<a href="https://github.com/pgbouncer/pgbouncer">unrelated project</a>
+	</body></html>`)
+
+	traces, _ := parsePage(body, "https://codescoring.ru/", "codescoring.ru")
+
+	for _, trace := range traces {
+		assert.NotEqual(t, entities.Github, trace.Type)
+	}
+}
+
+func TestParsePage_KeepsInScopeGithubRepo(t *testing.T) {
+	body := []byte(`<html><body>
+		<a href="https://github.com/CodeScoring/awesome-open-source-licensing">our repo</a>
+	</body></html>`)
+
+	traces, _ := parsePage(body, "https://codescoring.ru/", "codescoring.ru")
+
+	var types []entities.TraceType
+	for _, trace := range traces {
+		types = append(types, trace.Type)
+	}
+	assert.Contains(t, types, entities.Github)
 }
