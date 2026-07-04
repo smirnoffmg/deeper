@@ -279,7 +279,7 @@ func TestDomainRateLimiter_GetMetrics(t *testing.T) {
 	// Trigger some rate limiting to generate metrics
 	ctx := context.Background()
 	for i := 0; i < 3; i++ {
-		limiter.Wait(ctx, "example.com")
+		_ = limiter.Wait(ctx, "example.com")
 	}
 
 	metrics := limiter.GetMetrics()

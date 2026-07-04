@@ -35,7 +35,7 @@ func TestDeduplicationSystem_Integration(t *testing.T) {
 	dedupCache := NewDeduplicationCache(&config.DeduplicationConfig, nil)
 	wp.SetDeduplicationCache(dedupCache)
 
-	defer wp.Shutdown(10 * time.Second)
+	defer func() { _ = wp.Shutdown(10 * time.Second) }()
 
 	ctx := context.Background()
 
@@ -126,7 +126,7 @@ func TestDeduplicationSystem_Integration(t *testing.T) {
 			for j := 0; j < numGoroutines; j++ {
 				go func(content string) {
 					task := &Task{Payload: content}
-					wp.Submit(ctx, task)
+					_ = wp.Submit(ctx, task)
 				}(content)
 			}
 		}
@@ -145,13 +145,13 @@ func TestDeduplicationSystem_Integration(t *testing.T) {
 		// Submit some tasks to generate metrics
 		for i := 0; i < 10; i++ {
 			task := &Task{Payload: fmt.Sprintf("metrics-test-%d", i)}
-			wp.Submit(ctx, task)
+			_ = wp.Submit(ctx, task)
 		}
 
 		// Submit some duplicates
 		for i := 0; i < 5; i++ {
 			task := &Task{Payload: "metrics-test-0"} // Duplicate
-			wp.Submit(ctx, task)
+			_ = wp.Submit(ctx, task)
 		}
 
 		// Wait for processing
@@ -197,7 +197,7 @@ func TestDeduplicationSystem_Performance(t *testing.T) {
 	wp := NewWorkerPool(config)
 	dedupCache := NewDeduplicationCache(&config.DeduplicationConfig, nil)
 	wp.SetDeduplicationCache(dedupCache)
-	defer wp.Shutdown(10 * time.Second)
+	defer func() { _ = wp.Shutdown(10 * time.Second) }()
 
 	ctx := context.Background()
 
@@ -262,7 +262,7 @@ func TestDeduplicationSystem_EdgeCases(t *testing.T) {
 	wp := NewWorkerPool(config)
 	dedupCache := NewDeduplicationCache(&config.DeduplicationConfig, nil)
 	wp.SetDeduplicationCache(dedupCache)
-	defer wp.Shutdown(10 * time.Second)
+	defer func() { _ = wp.Shutdown(10 * time.Second) }()
 
 	ctx := context.Background()
 
@@ -302,7 +302,7 @@ func TestDeduplicationSystem_EdgeCases(t *testing.T) {
 		// Fill cache beyond capacity
 		for i := 0; i < 10; i++ {
 			task := &Task{Payload: fmt.Sprintf("eviction-test-%d", i)}
-			wp.Submit(ctx, task)
+			_ = wp.Submit(ctx, task)
 		}
 
 		time.Sleep(100 * time.Millisecond)
@@ -311,8 +311,8 @@ func TestDeduplicationSystem_EdgeCases(t *testing.T) {
 		task1 := &Task{Payload: "eviction-test-0"}
 		task2 := &Task{Payload: "eviction-test-1"}
 
-		wp.Submit(ctx, task1)
-		wp.Submit(ctx, task2)
+		_ = wp.Submit(ctx, task1)
+		_ = wp.Submit(ctx, task2)
 
 		time.Sleep(100 * time.Millisecond)
 

@@ -43,6 +43,7 @@ func NewProcessor(cfg *config.Config, metricsCollector *metrics.MetricsCollector
 			HalfOpenMaxCalls: cfg.WorkerPoolConfig.CircuitBreakerConfig.HalfOpenMaxCalls,
 			WindowSize:       cfg.WorkerPoolConfig.CircuitBreakerConfig.WindowSize,
 		},
+		TaskHandler: newTraceTaskHandler(metricsCollector),
 	}
 
 	workerPool := workerpool.NewWorkerPool(wpConfig)
@@ -87,6 +88,7 @@ func (p *Processor) ProcessTrace(ctx context.Context, trace entities.Trace) ([]e
 	var allErrors []error
 
 	// Submit tasks to worker pool
+	submittedTasks := 0
 	for _, plugin := range plugins {
 		pluginInterface, ok := plugin.(interface {
 			FollowTrace(trace entities.Trace) ([]entities.Trace, error)
@@ -115,10 +117,11 @@ func (p *Processor) ProcessTrace(ctx context.Context, trace entities.Trace) ([]e
 			allErrors = append(allErrors, err)
 			continue
 		}
+		submittedTasks++
 	}
 
 	// Collect results from worker pool
-	for i := 0; i < len(plugins); i++ {
+	for i := 0; i < submittedTasks; i++ {
 		result, err := p.workerPool.GetResult(ctx)
 		if err != nil {
 			if err == context.Canceled {
@@ -130,32 +133,16 @@ func (p *Processor) ProcessTrace(ctx context.Context, trace entities.Trace) ([]e
 
 		if result.Error != nil {
 			allErrors = append(allErrors, result.Error)
-		} else {
-			// Extract traces from result
-			if taskPayload, ok := result.Result.(*tasks.TraceProcessingTask); ok {
-				pluginInterface := taskPayload.Plugin.(interface {
-					FollowTrace(trace entities.Trace) ([]entities.Trace, error)
-					String() string
-				})
+			continue
+		}
 
-				pluginStartTime := time.Now()
-				newTraces, err := pluginInterface.FollowTrace(taskPayload.Trace)
-				pluginDuration := time.Since(pluginStartTime)
-
-				// Record plugin metrics
-				p.metrics.RecordPluginExecution(pluginInterface.String(), pluginDuration, err == nil)
-
-				if err != nil {
-					log.Error().Err(err).Msgf("Plugin %s failed to process trace", pluginInterface.String())
-					allErrors = append(allErrors, errors.NewPluginError("plugin processing failed", err).WithContext("plugin", pluginInterface.String()))
-				} else {
-					// Filter out empty traces
-					for _, newTrace := range newTraces {
-						if newTrace.Value != "" {
-							allTraces = append(allTraces, newTrace)
-						}
-					}
-				}
+		newTraces, ok := result.Result.([]entities.Trace)
+		if !ok {
+			continue
+		}
+		for _, newTrace := range newTraces {
+			if newTrace.Value != "" {
+				allTraces = append(allTraces, newTrace)
 			}
 		}
 	}
@@ -224,4 +211,43 @@ func (p *Processor) ConfigureDomainRateLimit(domain string, rateLimit float64, b
 		return p.workerPool.ConfigureDomainRateLimit(config)
 	}
 	return fmt.Errorf("worker pool not initialized")
+}
+
+func newTraceTaskHandler(metricsCollector *metrics.MetricsCollector) workerpool.TaskHandler {
+	return func(ctx context.Context, task *workerpool.Task) (interface{}, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
+		taskPayload, ok := task.Payload.(*tasks.TraceProcessingTask)
+		if !ok {
+			return nil, errors.NewPluginError("invalid task payload", nil)
+		}
+
+		pluginInterface, ok := taskPayload.Plugin.(interface {
+			FollowTrace(trace entities.Trace) ([]entities.Trace, error)
+			String() string
+		})
+		if !ok {
+			return nil, errors.NewPluginError("invalid plugin interface", nil)
+		}
+
+		pluginStartTime := time.Now()
+		newTraces, err := pluginInterface.FollowTrace(taskPayload.Trace)
+		metricsCollector.RecordPluginExecution(pluginInterface.String(), time.Since(pluginStartTime), err == nil)
+
+		if err != nil {
+			log.Error().Err(err).Msgf("Plugin %s failed to process trace", pluginInterface.String())
+			return nil, errors.NewPluginError("plugin processing failed", err).WithContext("plugin", pluginInterface.String())
+		}
+
+		filtered := make([]entities.Trace, 0, len(newTraces))
+		for _, newTrace := range newTraces {
+			if newTrace.Value != "" {
+				filtered = append(filtered, newTrace)
+			}
+		}
+
+		return filtered, nil
+	}
 }

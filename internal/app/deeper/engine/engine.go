@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -74,22 +75,42 @@ func (e *Engine) ProcessInput(ctx context.Context, input string) ([]entities.Tra
 	return allTraces, nil
 }
 
-// processBatch processes a batch of traces using the processor's worker pool
+// processBatch processes a batch of traces concurrently, bounded by MaxConcurrency
 func (e *Engine) processBatch(ctx context.Context, traces []entities.Trace) ([]entities.Trace, error) {
-	var allResults []entities.Trace
-	var errors []error
+	var (
+		allResults []entities.Trace
+		errors     []error
+		mu         sync.Mutex
+		wg         sync.WaitGroup
+	)
 
-	// Process each trace in the batch sequentially (the processor handles concurrency internally)
-	for _, trace := range traces {
-		results, err := e.processor.ProcessTrace(ctx, trace)
-		if err != nil {
-			log.Error().Err(err).Msgf("Failed to process trace %v", trace)
-			errors = append(errors, err)
-			continue
-		}
-
-		allResults = append(allResults, results...)
+	concurrency := e.config.MaxConcurrency
+	if concurrency <= 0 {
+		concurrency = 1
 	}
+	sem := make(chan struct{}, concurrency)
+
+	for _, trace := range traces {
+		wg.Add(1)
+		go func(trace entities.Trace) {
+			defer wg.Done()
+
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			results, err := e.processor.ProcessTrace(ctx, trace)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				log.Error().Err(err).Msgf("Failed to process trace %v", trace)
+				errors = append(errors, err)
+				return
+			}
+			allResults = append(allResults, results...)
+		}(trace)
+	}
+
+	wg.Wait()
 
 	// Log errors but don't fail the entire batch
 	if len(errors) > 0 {

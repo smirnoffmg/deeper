@@ -6,7 +6,11 @@ import (
 	"github.com/smirnoffmg/deeper/internal/app/deeper"
 
 	// Import plugins to register them
+	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/academic_papers"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/coderepos"
+	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/crtsh"
+	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/dns_resolver"
+	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/facebook"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/social_profiles"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/subdomains"
 )

@@ -47,7 +47,7 @@ func TestWorkerPool_Submit(t *testing.T) {
 	}
 
 	wp := NewWorkerPool(config)
-	defer wp.Shutdown(5 * time.Second)
+	defer func() { _ = wp.Shutdown(5 * time.Second) }()
 
 	ctx := context.Background()
 
@@ -98,7 +98,7 @@ func TestWorkerPool_Deduplication(t *testing.T) {
 	dedupCache := NewDeduplicationCache(dedupConfig, nil)
 	wp.SetDeduplicationCache(dedupCache)
 
-	defer wp.Shutdown(5 * time.Second)
+	defer func() { _ = wp.Shutdown(5 * time.Second) }()
 
 	ctx := context.Background()
 
@@ -138,7 +138,7 @@ func TestWorkerPool_RateLimiting(t *testing.T) {
 	}
 
 	wp := NewWorkerPool(config)
-	defer wp.Shutdown(5 * time.Second)
+	defer func() { _ = wp.Shutdown(5 * time.Second) }()
 
 	ctx := context.Background()
 
@@ -178,7 +178,7 @@ func TestWorkerPool_CircuitBreaker(t *testing.T) {
 	}
 
 	wp := NewWorkerPool(config)
-	defer wp.Shutdown(5 * time.Second)
+	defer func() { _ = wp.Shutdown(5 * time.Second) }()
 
 	ctx := context.Background()
 
@@ -234,7 +234,7 @@ func TestWorkerPool_Shutdown(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Try to submit after shutdown
-	err = wp.Submit(ctx, task)
+	_ = wp.Submit(ctx, task)
 	// Note: This might not always error immediately due to async shutdown
 	// The important thing is that the worker pool shuts down gracefully
 }
@@ -253,7 +253,7 @@ func TestWorkerPool_GetMetrics(t *testing.T) {
 	}
 
 	wp := NewWorkerPool(config)
-	defer wp.Shutdown(5 * time.Second)
+	defer func() { _ = wp.Shutdown(5 * time.Second) }()
 
 	// Submit some tasks
 	for i := 0; i < 3; i++ {
@@ -351,11 +351,10 @@ func TestWorkerPool_ConcurrentProcessing(t *testing.T) {
 	}
 
 	wp := NewWorkerPool(config)
-	defer wp.Shutdown(10 * time.Second)
+	defer func() { _ = wp.Shutdown(10 * time.Second) }()
 
 	ctx := context.Background()
 	var wg sync.WaitGroup
-	results := make(chan *TaskResult, 10)
 
 	// Submit tasks concurrently
 	for i := 0; i < 10; i++ {
@@ -373,24 +372,17 @@ func TestWorkerPool_ConcurrentProcessing(t *testing.T) {
 
 	wg.Wait()
 
-	// Collect results
-	go func() {
-		for {
-			select {
-			case result := <-wp.resultQueue:
-				results <- result
-			case <-time.After(1 * time.Second):
-				return
-			}
-		}
-	}()
-
-	// Wait for results
-	time.Sleep(2 * time.Second)
-	close(results)
+	// Collect exactly the 10 results produced by the submitted tasks, directly
+	// from the main goroutine. No shared channel/close is needed, so there's
+	// nothing for a producer goroutine to race against.
+	resultCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 
 	resultCount := 0
-	for range results {
+	for i := 0; i < 10; i++ {
+		result, err := wp.GetResult(resultCtx)
+		require.NoError(t, err)
+		require.NotNil(t, result)
 		resultCount++
 	}
 

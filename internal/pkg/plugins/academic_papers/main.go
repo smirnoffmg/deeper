@@ -58,7 +58,7 @@ func (g *AcademicPapersPlugin) FollowTrace(trace entities.Trace) ([]entities.Tra
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result SearchResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {

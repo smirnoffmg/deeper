@@ -40,22 +40,22 @@ func TestDefaultConfig(t *testing.T) {
 
 func TestLoadConfigWithEnvironmentVariables(t *testing.T) {
 	// Set environment variables
-	os.Setenv("DEEPER_HTTP_TIMEOUT", "60s")
-	os.Setenv("DEEPER_MAX_CONCURRENCY", "20")
-	os.Setenv("DEEPER_RATE_LIMIT", "10")
-	os.Setenv("DEEPER_LOG_LEVEL", "debug")
-	os.Setenv("DEEPER_USER_AGENT", "TestAgent/1.0")
-	os.Setenv("DEEPER_MAX_RETRIES", "5")
-	os.Setenv("DEEPER_RETRY_DELAY", "2s")
+	_ = os.Setenv("DEEPER_HTTP_TIMEOUT", "60s")
+	_ = os.Setenv("DEEPER_MAX_CONCURRENCY", "20")
+	_ = os.Setenv("DEEPER_RATE_LIMIT", "10")
+	_ = os.Setenv("DEEPER_LOG_LEVEL", "debug")
+	_ = os.Setenv("DEEPER_USER_AGENT", "TestAgent/1.0")
+	_ = os.Setenv("DEEPER_MAX_RETRIES", "5")
+	_ = os.Setenv("DEEPER_RETRY_DELAY", "2s")
 
 	defer func() {
-		os.Unsetenv("DEEPER_HTTP_TIMEOUT")
-		os.Unsetenv("DEEPER_MAX_CONCURRENCY")
-		os.Unsetenv("DEEPER_RATE_LIMIT")
-		os.Unsetenv("DEEPER_LOG_LEVEL")
-		os.Unsetenv("DEEPER_USER_AGENT")
-		os.Unsetenv("DEEPER_MAX_RETRIES")
-		os.Unsetenv("DEEPER_RETRY_DELAY")
+		_ = os.Unsetenv("DEEPER_HTTP_TIMEOUT")
+		_ = os.Unsetenv("DEEPER_MAX_CONCURRENCY")
+		_ = os.Unsetenv("DEEPER_RATE_LIMIT")
+		_ = os.Unsetenv("DEEPER_LOG_LEVEL")
+		_ = os.Unsetenv("DEEPER_USER_AGENT")
+		_ = os.Unsetenv("DEEPER_MAX_RETRIES")
+		_ = os.Unsetenv("DEEPER_RETRY_DELAY")
 	}()
 
 	cfg := LoadConfig()
@@ -91,18 +91,18 @@ func TestLoadConfigWithEnvironmentVariables(t *testing.T) {
 
 func TestLoadConfigWithInvalidValues(t *testing.T) {
 	// Set invalid environment variables
-	os.Setenv("DEEPER_HTTP_TIMEOUT", "invalid")
-	os.Setenv("DEEPER_MAX_CONCURRENCY", "invalid")
-	os.Setenv("DEEPER_RATE_LIMIT", "invalid")
-	os.Setenv("DEEPER_MAX_RETRIES", "invalid")
-	os.Setenv("DEEPER_RETRY_DELAY", "invalid")
+	_ = os.Setenv("DEEPER_HTTP_TIMEOUT", "invalid")
+	_ = os.Setenv("DEEPER_MAX_CONCURRENCY", "invalid")
+	_ = os.Setenv("DEEPER_RATE_LIMIT", "invalid")
+	_ = os.Setenv("DEEPER_MAX_RETRIES", "invalid")
+	_ = os.Setenv("DEEPER_RETRY_DELAY", "invalid")
 
 	defer func() {
-		os.Unsetenv("DEEPER_HTTP_TIMEOUT")
-		os.Unsetenv("DEEPER_MAX_CONCURRENCY")
-		os.Unsetenv("DEEPER_RATE_LIMIT")
-		os.Unsetenv("DEEPER_MAX_RETRIES")
-		os.Unsetenv("DEEPER_RETRY_DELAY")
+		_ = os.Unsetenv("DEEPER_HTTP_TIMEOUT")
+		_ = os.Unsetenv("DEEPER_MAX_CONCURRENCY")
+		_ = os.Unsetenv("DEEPER_RATE_LIMIT")
+		_ = os.Unsetenv("DEEPER_MAX_RETRIES")
+		_ = os.Unsetenv("DEEPER_RETRY_DELAY")
 	}()
 
 	cfg := LoadConfig()

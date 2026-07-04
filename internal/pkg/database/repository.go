@@ -105,7 +105,7 @@ func (r *Repository) GetTraces(query TraceQuery) ([]Trace, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query traces: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var traces []Trace
 	for rows.Next() {
@@ -303,7 +303,7 @@ func (r *Repository) GetScanSessions(query ScanQuery) ([]ScanSession, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query scan sessions: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var sessions []ScanSession
 	for rows.Next() {

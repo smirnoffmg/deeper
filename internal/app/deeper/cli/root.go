@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -145,34 +144,4 @@ func createEngine() *engine.Engine {
 
 func createDisplay() *display.Display {
 	return display.NewDisplay(os.Stdout)
-}
-
-func formatOutput(traces []interface{}, format string, display *display.Display) error {
-	switch format {
-	case "table":
-		if traceList, ok := traces[0].([]interface{}); ok {
-			// Handle slice of traces
-			_ = traceList
-			// display.PrintTracesAsTable(traceList) // We'd need to update the display package
-		}
-		return nil
-	case "json":
-		return outputJSON(traces)
-	case "csv":
-		return outputCSV(traces)
-	default:
-		return fmt.Errorf("unsupported output format: %s", format)
-	}
-}
-
-func outputJSON(data []interface{}) error {
-	// Implementation for JSON output
-	fmt.Println("JSON output not yet implemented")
-	return nil
-}
-
-func outputCSV(data []interface{}) error {
-	// Implementation for CSV output
-	fmt.Println("CSV output not yet implemented")
-	return nil
 }

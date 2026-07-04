@@ -18,13 +18,11 @@ import (
 	"github.com/smirnoffmg/deeper/internal/pkg/database"
 	"github.com/smirnoffmg/deeper/internal/pkg/http"
 	"github.com/smirnoffmg/deeper/internal/pkg/metrics"
-	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 )
 
 // App represents the main application with all its components
 type App struct {
-	app    *fx.App
-	logger *zap.Logger
+	app *fx.App
 }
 
 // NewApp creates a new application instance with uber-fx
@@ -39,7 +37,6 @@ func NewApp() *App {
 			provideCache,
 			provideHTTPClient,
 			provideMetricsCollector,
-			providePluginRegistry,
 			provideProcessor,
 			provideDisplay,
 			provideEngine,
@@ -47,7 +44,6 @@ func NewApp() *App {
 		// Invoke startup functions
 		fx.Invoke(
 			startupLogger,
-			startupPluginRegistry,
 			startupMetrics,
 		),
 		// Lifecycle hooks
@@ -130,11 +126,6 @@ func provideMetricsCollector() *metrics.MetricsCollector {
 	return metrics.GetGlobalMetrics()
 }
 
-// providePluginRegistry provides a plugin registry
-func providePluginRegistry() *plugins.PluginRegistry {
-	return plugins.NewPluginRegistry()
-}
-
 // provideProcessor provides a trace processor
 func provideProcessor(cfg *config.Config, metricsCollector *metrics.MetricsCollector, repo *database.Repository, cache *database.Cache) *processor.Processor {
 	return processor.NewProcessor(cfg, metricsCollector, repo, cache)
@@ -150,26 +141,9 @@ func provideEngine(cfg *config.Config, metricsCollector *metrics.MetricsCollecto
 	return engine.NewEngine(cfg, metricsCollector, repo, cache)
 }
 
-// provideCLI provides the CLI interface
-func provideCLI() {
-	// CLI is handled separately through cobra
-}
-
 // startupLogger logs application startup
 func startupLogger(logger *zap.Logger) {
 	logger.Info("Application starting up")
-}
-
-// startupPluginRegistry initializes the plugin registry
-func startupPluginRegistry(registry *plugins.PluginRegistry, logger *zap.Logger) {
-	logger.Info("Initializing plugin registry")
-
-	// Start health checks
-	registry.StartHealthChecks(context.Background())
-
-	logger.Info("Plugin registry initialized",
-		zap.Int("plugin_count", registry.GetPluginCount()),
-		zap.Int("trace_type_count", registry.GetTraceTypeCount()))
 }
 
 // startupMetrics initializes metrics collection

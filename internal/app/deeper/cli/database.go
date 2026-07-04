@@ -57,7 +57,7 @@ func runDatabaseStats(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Get database statistics
 	stats, err := db.Stats()
@@ -85,7 +85,7 @@ func runDatabaseCleanup(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create repository and cache
 	repo := database.NewRepository(db)
@@ -106,7 +106,7 @@ func runDatabaseInfo(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Get database path
 	dbPath := db.GetPath()

@@ -37,7 +37,7 @@ func (p SubdomainPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, er
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var newTraces []entities.Trace
 	scanner := bufio.NewScanner(resp.Body)

@@ -44,7 +44,7 @@ func NewDatabase(dbPath string) (*Database, error) {
 
 	// Run migrations
 	if err := database.migrate(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
 

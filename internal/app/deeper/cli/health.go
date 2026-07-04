@@ -237,11 +237,12 @@ func displayHealthResults(checks []HealthCheck) {
 
 	for _, check := range checks {
 		status := check.Status
-		if status == "PASS" {
+		switch status {
+		case "PASS":
 			status = "✅ PASS"
-		} else if status == "WARN" {
+		case "WARN":
 			status = "⚠️  WARN"
-		} else {
+		default:
 			status = "❌ FAIL"
 		}
 

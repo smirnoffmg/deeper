@@ -47,6 +47,9 @@ type WorkerPool struct {
 	metrics            *Metrics
 }
 
+// TaskHandler processes a task and returns its result.
+type TaskHandler func(ctx context.Context, task *Task) (interface{}, error)
+
 // Config holds worker pool configuration
 type Config struct {
 	MaxWorkers           int
@@ -58,6 +61,7 @@ type Config struct {
 	EnableDeduplication  bool
 	EnableMetrics        bool
 	DeduplicationConfig  DeduplicationConfig
+	TaskHandler          TaskHandler
 }
 
 // CircuitBreakerConfig holds circuit breaker configuration
@@ -320,25 +324,34 @@ func (w *Worker) processTask(task *Task) {
 	ctx, cancel := context.WithTimeout(w.pool.ctx, w.pool.config.TaskTimeout)
 	defer cancel()
 
-	// Process the task (this would be replaced with actual task processing logic)
-	var err error
-	if task.ID == "failing-task" {
+	// Process the task
+	var (
+		result interface{}
+		err    error
+	)
+	switch {
+	case w.pool.config.TaskHandler != nil:
+		result, err = w.pool.config.TaskHandler(ctx, task)
+	case task.ID == "failing-task":
 		err = fmt.Errorf("simulated failure for testing")
+		result = task.Payload
+	default:
+		result = task.Payload
 	}
 
-	result := &TaskResult{
+	taskResult := &TaskResult{
 		TaskID:   task.ID,
-		Result:   task.Payload,
+		Result:   result,
 		Error:    err,
 		Duration: time.Since(startTime),
 	}
 
 	// Record the result
-	w.pool.recordTaskResult(result)
+	w.pool.recordTaskResult(taskResult)
 
 	// Send result to result queue
 	select {
-	case w.pool.resultQueue <- result:
+	case w.pool.resultQueue <- taskResult:
 	case <-ctx.Done():
 		log.Warn().Str("taskID", task.ID).Msg("Failed to send task result")
 	}

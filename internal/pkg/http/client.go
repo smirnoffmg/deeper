@@ -84,7 +84,7 @@ func (c *DefaultClient) Do(req *http.Request) (*http.Response, error) {
 
 		// Consider 5xx errors as retryable
 		if resp.StatusCode >= 500 && resp.StatusCode < 600 {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			lastErr = errors.NewNetworkError("server error", nil).WithContext("status_code", resp.StatusCode)
 			continue
 		}

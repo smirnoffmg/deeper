@@ -60,7 +60,7 @@ func (bs *BenchmarkSuite) RunWorkerPoolBenchmark(ctx context.Context, numTraces 
 	}
 
 	workerPool := workerpool.NewWorkerPool(wpConfig)
-	defer workerPool.Shutdown(10 * time.Second)
+	defer func() { _ = workerPool.Shutdown(10 * time.Second) }()
 
 	// Generate test traces
 	traces := bs.generateTestTraces(numTraces)
@@ -226,7 +226,7 @@ func PrintBenchmarkResults(results []*BenchmarkResult) {
 	fmt.Println("\n=== Benchmark Results ===")
 	fmt.Printf("%-40s %-12s %-12s %-12s %-12s %-12s\n",
 		"Test Name", "Duration", "Processed", "Discovered", "Throughput", "Error Rate")
-	fmt.Println(string(make([]byte, 100, 100)))
+	fmt.Println(string(make([]byte, 100)))
 
 	for _, result := range results {
 		fmt.Printf("%-40s %-12s %-12d %-12d %-12.2f %-12.2f%%\n",

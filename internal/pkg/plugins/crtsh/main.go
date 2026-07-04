@@ -45,7 +45,7 @@ func (g *SubdomainPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, e
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var entries []CrtShEntry
 	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {

@@ -18,7 +18,7 @@ func TestNewDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Check if database file was created
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
@@ -49,7 +49,7 @@ func TestRepository_StoreAndGetTrace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	repo := NewRepository(db)
 
@@ -96,7 +96,7 @@ func TestCache_StoreAndGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	repo := NewRepository(db)
 	cache := NewCache(repo)
@@ -154,7 +154,7 @@ func TestRepository_ScanSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	repo := NewRepository(db)
 

@@ -120,33 +120,42 @@ make benchmark
 
 ```text
 deeper/
+├── cmd/
+│   └── deeper/
+│       └── main.go              # Application entry point
 ├── internal/
-│   ├── config/          # Configuration management
-│   ├── display/         # Result presentation
-│   ├── engine/          # Core orchestration
-│   ├── entities/        # Data models and validation
-│   ├── errors/          # Structured error handling
-│   ├── http/            # HTTP client utilities
-│   ├── plugins/         # Plugin implementations
-│   ├── processor/       # Trace processing logic
-│   └── state/           # Global state management
-├── docs/                # Documentation and diagrams
-├── main.go              # Application entry point
-├── Makefile             # Build and development tasks
-└── README.md            # This file
+│   ├── app/deeper/
+│   │   ├── cli/                 # Cobra CLI commands (scan, plugins, health, …)
+│   │   ├── display/             # Result presentation
+│   │   ├── engine/              # Core orchestration
+│   │   └── processor/           # Trace processing and worker pool integration
+│   └── pkg/
+│       ├── config/              # Configuration management
+│       ├── database/            # SQLite storage and caching
+│       ├── entities/            # Data models and validation
+│       ├── errors/              # Structured error handling
+│       ├── http/                # HTTP client utilities
+│       ├── metrics/             # Performance monitoring
+│       ├── plugins/             # Plugin implementations
+│       ├── state/               # Global plugin registry
+│       └── workerpool/          # Concurrent task processing
+├── configs/                     # Default configuration
+├── docs/                        # Documentation and diagrams
+├── Makefile                     # Build and development tasks
+└── README.md                    # This file
 ```
 
 ### Adding a New Plugin
 
-1. Create a new directory in `internal/plugins/`
+1. Create a new directory in `internal/pkg/plugins/`
 2. Implement the `DeeperPlugin` interface:
 
 ```go
 package your_plugin
 
 import (
-    "github.com/smirnoffmg/deeper/internal/entities"
-    "github.com/smirnoffmg/deeper/internal/state"
+    "github.com/smirnoffmg/deeper/internal/pkg/entities"
+    "github.com/smirnoffmg/deeper/internal/pkg/state"
 )
 
 const InputTraceType = entities.Username
@@ -186,10 +195,10 @@ func (p *YourPlugin) String() string {
 }
 ```
 
-3. Import the plugin in `main.go`:
+3. Import the plugin in `cmd/deeper/main.go`:
 
 ```go
-_ "github.com/smirnoffmg/deeper/internal/plugins/your_plugin"
+_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/your_plugin"
 ```
 
 ### Development Commands
@@ -280,10 +289,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📈 Roadmap
 
-- [ ] CLI framework with subcommands
+- [x] CLI framework with subcommands (`scan`, `plugins`, `health`, `metrics`, `database`, `rate-limit`, `benchmark`)
 - [ ] Plugin lifecycle management
-- [ ] Metrics and monitoring
-- [ ] Database integration for trace storage
+- [x] Metrics and monitoring
+- [x] Database integration for trace storage
 - [ ] Web interface
 - [ ] API server mode
 - [ ] Plugin marketplace

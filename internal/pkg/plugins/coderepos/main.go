@@ -77,7 +77,7 @@ func fetchGitHubRepos(username string) ([]entities.Trace, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var repos []GitHubRepo
 	if err := json.NewDecoder(resp.Body).Decode(&repos); err != nil {
@@ -100,7 +100,7 @@ func fetchBitbucketRepos(username string) ([]entities.Trace, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
 		Repos []BitbucketRepo `json:"values"`
@@ -125,7 +125,7 @@ func fetchGitLabRepos(username string) ([]entities.Trace, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var repos []GitLabRepo
 	if err := json.NewDecoder(resp.Body).Decode(&repos); err != nil {

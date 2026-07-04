@@ -184,10 +184,16 @@ func (dc *DeduplicationCache) GetMetrics() *DeduplicationMetrics {
 	dc.mutex.RLock()
 	defer dc.mutex.RUnlock()
 
-	// Calculate hit rate
-	totalRequests := dc.metrics.MemoryHits + dc.metrics.CacheHits + dc.metrics.CacheMisses
+	// MemoryHits/CacheHits/CacheMisses are updated via atomic.AddInt64 from
+	// concurrent callers outside this mutex, so they must be read atomically
+	// too, or the mutex here does nothing to synchronize with those writes.
+	memoryHits := atomic.LoadInt64(&dc.metrics.MemoryHits)
+	cacheHits := atomic.LoadInt64(&dc.metrics.CacheHits)
+	cacheMisses := atomic.LoadInt64(&dc.metrics.CacheMisses)
+
+	totalRequests := memoryHits + cacheHits + cacheMisses
 	if totalRequests > 0 {
-		dc.metrics.HitRate = float64(dc.metrics.MemoryHits+dc.metrics.CacheHits) / float64(totalRequests)
+		dc.metrics.HitRate = float64(memoryHits+cacheHits) / float64(totalRequests)
 	}
 
 	// Get memory cache metrics

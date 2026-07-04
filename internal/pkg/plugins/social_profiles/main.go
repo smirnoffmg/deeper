@@ -96,7 +96,7 @@ func (e SherlockEntry) CheckUrl(username string) bool {
 		return false
 	}
 
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	for _, msg := range e.ErrorMsg {
 		if strings.Contains(string(body), msg) {
@@ -124,7 +124,7 @@ func (g *SocialProfilesPlugin) Register() error {
 		return err
 	}
 
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	jsonFile, err := io.ReadAll(resp.Body)
 
