@@ -20,14 +20,31 @@ func NewDomainExtractor() *DomainExtractor {
 	}
 }
 
-// ExtractDomain extracts the domain from a task payload
+// traceValueProvider is satisfied by *tasks.TraceProcessingTask (the actual
+// payload shape used in production — see processor.Processor.ProcessTrace).
+// Defined locally rather than importing the concrete type to avoid a
+// pkg -> app layering dependency; Go's implicit interface satisfaction
+// means TraceProcessingTask doesn't need to know this interface exists.
+type traceValueProvider interface {
+	TraceValue() string
+}
+
+// ExtractDomain extracts the domain from a task payload.
+//
+// Regression note: this used to fmt.Sprintf("%v", task.Payload) directly,
+// which stringifies the whole *tasks.TraceProcessingTask struct (e.g.
+// "&{{codescoring.ru domain} CrtShPlugin <nil>}") instead of the actual
+// trace value — that never matches the email/URL/domain-only regexes below,
+// so in production every single task fell into the shared "default"
+// rate-limit bucket regardless of what it was actually processing. Found
+// live: this was the actual cause of a 5-minute scan timeout, not just
+// request volume — one bucket at 10 req/s for the entire scan's tasks.
 func (de *DomainExtractor) ExtractDomain(task *Task) (string, error) {
 	if task == nil || task.Payload == nil {
 		return "", fmt.Errorf("task or payload is nil")
 	}
 
-	// Convert payload to string for analysis
-	payloadStr := fmt.Sprintf("%v", task.Payload)
+	payloadStr := de.payloadValue(task.Payload)
 
 	// Try to extract domain from email
 	if domain := de.extractEmailDomain(payloadStr); domain != "" {
@@ -46,6 +63,13 @@ func (de *DomainExtractor) ExtractDomain(task *Task) (string, error) {
 
 	// If no domain found, return a default domain for rate limiting
 	return "default", nil
+}
+
+func (de *DomainExtractor) payloadValue(payload interface{}) string {
+	if provider, ok := payload.(traceValueProvider); ok {
+		return provider.TraceValue()
+	}
+	return fmt.Sprintf("%v", payload)
 }
 
 // extractEmailDomain extracts domain from email addresses

@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smirnoffmg/deeper/internal/app/deeper/processor/tasks"
+	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -186,6 +188,66 @@ func TestDeduplicationCache_ContentAddressableHashing(t *testing.T) {
 	isDuplicate, err = dc.IsDuplicate(ctx, task3)
 	assert.NoError(t, err)
 	assert.False(t, isDuplicate)
+}
+
+// TestGenerateTaskID_StableAcrossPluginPointerInstances is a regression
+// test: generateTaskID used to fmt.Sprintf("%v", task.Payload) directly,
+// which for the real production payload (*tasks.TraceProcessingTask)
+// stringifies the embedded Plugin pointer as a raw heap address — unique
+// per process — so cross-run persistent dedup could never actually hit.
+// Verified live: identical logical tasks in three separate process runs
+// produced three different hashes. The fix must key off the payload's own
+// stable identity (Trace.Value + PluginKey) instead.
+func TestGenerateTaskID_StableAcrossPluginPointerInstances(t *testing.T) {
+	dc := NewDeduplicationCache(&DeduplicationConfig{}, nil)
+
+	// Two distinct Plugin pointer values simulate two separate process
+	// runs allocating the plugin singleton at different heap addresses.
+	pluginInstanceA := &struct{ n int }{n: 1}
+	pluginInstanceB := &struct{ n int }{n: 2}
+
+	task1 := &Task{Payload: &tasks.TraceProcessingTask{
+		Trace:     entities.Trace{Value: "codescoring.ru", Type: entities.Domain},
+		PluginKey: "CrtShPlugin_domain",
+		Plugin:    pluginInstanceA,
+	}}
+	task2 := &Task{Payload: &tasks.TraceProcessingTask{
+		Trace:     entities.Trace{Value: "codescoring.ru", Type: entities.Domain},
+		PluginKey: "CrtShPlugin_domain",
+		Plugin:    pluginInstanceB,
+	}}
+
+	assert.Equal(t, dc.generateTaskID(task1), dc.generateTaskID(task2))
+}
+
+func TestGenerateTaskID_DifferentTracesProduceDifferentIDs(t *testing.T) {
+	dc := NewDeduplicationCache(&DeduplicationConfig{}, nil)
+
+	task1 := &Task{Payload: &tasks.TraceProcessingTask{
+		Trace:     entities.Trace{Value: "a.com", Type: entities.Domain},
+		PluginKey: "CrtShPlugin_domain",
+	}}
+	task2 := &Task{Payload: &tasks.TraceProcessingTask{
+		Trace:     entities.Trace{Value: "b.com", Type: entities.Domain},
+		PluginKey: "CrtShPlugin_domain",
+	}}
+
+	assert.NotEqual(t, dc.generateTaskID(task1), dc.generateTaskID(task2))
+}
+
+func TestGenerateTaskID_DifferentPluginsSameTraceProduceDifferentIDs(t *testing.T) {
+	dc := NewDeduplicationCache(&DeduplicationConfig{}, nil)
+
+	task1 := &Task{Payload: &tasks.TraceProcessingTask{
+		Trace:     entities.Trace{Value: "codescoring.ru", Type: entities.Domain},
+		PluginKey: "CrtShPlugin_domain",
+	}}
+	task2 := &Task{Payload: &tasks.TraceProcessingTask{
+		Trace:     entities.Trace{Value: "codescoring.ru", Type: entities.Domain},
+		PluginKey: "DNSRecordsPlugin_domain",
+	}}
+
+	assert.NotEqual(t, dc.generateTaskID(task1), dc.generateTaskID(task2))
 }
 
 func TestDeduplicationCache_Metrics(t *testing.T) {

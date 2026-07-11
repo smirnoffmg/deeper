@@ -50,9 +50,16 @@ func (e *Engine) ProcessInput(ctx context.Context, input string, scanID int64) (
 	}
 
 	stack := []entities.Trace{initialTrace}
-	seen := make(map[entities.Trace]bool)
+	// The seed is marked seen and included in results up front: previously
+	// it was excluded from allTraces entirely (only plugin-discovered
+	// children were ever appended), so a scan's own starting point never
+	// appeared in its own results unless some plugin happened to
+	// rediscover the identical (value, type) pair as a "new" child
+	// elsewhere in the graph. Marking it seen here also prevents that kind
+	// of rediscovery from re-queuing and reprocessing the seed a second time.
+	seen := map[entities.Trace]bool{initialTrace: true}
+	allTraces := []entities.Trace{initialTrace}
 
-	var allTraces []entities.Trace
 	var processedCount int
 	var errorCount int
 

@@ -10,9 +10,9 @@ import (
 
 func TestExtractEmails(t *testing.T) {
 	tests := []struct {
-		name  string
-		text  string
-		want  []string
+		name string
+		text string
+		want []string
 	}{
 		{name: "single", text: "Contact us at info@example.com today", want: []string{"info@example.com"}},
 		{name: "multiple", text: "a@b.co and c@d.org", want: []string{"a@b.co", "c@d.org"}},
@@ -37,6 +37,11 @@ func TestExtractPhones(t *testing.T) {
 		{name: "intl", text: "Phone +1 555-123-4567", want: []string{"+1 555-123-4567"}},
 		{name: "date false positive risk", text: "Updated 2024-01-15", want: nil},
 		{name: "no match", text: "no numbers here", want: nil},
+		// Regression: found live against codescoring.ru — bare unformatted
+		// digit runs (Telegram user IDs, tax IDs) were being misclassified
+		// as phone numbers purely because they happened to be 10-13 digits.
+		{name: "bare telegram-id-shaped digits rejected", text: "user id 1737200008307 seen", want: nil},
+		{name: "bare tax-id-shaped digits rejected", text: "INN 7813227385 registered", want: nil},
 	}
 
 	for _, tt := range tests {
@@ -47,6 +52,27 @@ func TestExtractPhones(t *testing.T) {
 				return
 			}
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestLooksLikePhone(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  bool
+	}{
+		{name: "plus prefix, no separators", value: "+15551234567", want: true},
+		{name: "dashes", value: "555-123-4567", want: true},
+		{name: "parens and space", value: "(555) 123-4567", want: true},
+		{name: "dots", value: "555.123.4567", want: true},
+		{name: "bare digits, no plus, no separators", value: "5551234567", want: false},
+		{name: "bare 13-digit id", value: "1737200008307", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, looksLikePhone(tt.value))
 		})
 	}
 }

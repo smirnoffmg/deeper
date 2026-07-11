@@ -199,6 +199,59 @@ func parseCommitAuthors(body []byte) []commitAuthor {
 	return authors
 }
 
+// maxDistinctContributors bounds how many distinct people a repo's commit
+// history can credit before it's treated as a shared/workshop/community
+// project rather than the target's own personal work.
+const maxDistinctContributors = 5
+
+// filterAuthorsForSharedRepo drops unrelated contributors when a repo has
+// too many distinct people in its commit history — found live:
+// iloncka/workshop-astra-tik-tok is not a fork (isFork correctly reports
+// false) but has commits from several unrelated DataStax employees,
+// leaking their identities purely because iloncka once contributed to a
+// shared workshop repo. A small collaboration (e.g. two people on a
+// personal project) is a real, meaningful signal and stays intact; a repo
+// with many contributors is not, so only the repo owner's own
+// login-matched commits are kept.
+func filterAuthorsForSharedRepo(authors []commitAuthor, owner string) []commitAuthor {
+	if distinctIdentityCount(authors) <= maxDistinctContributors {
+		return authors
+	}
+
+	var filtered []commitAuthor
+	for _, a := range authors {
+		if a.Login != "" && strings.EqualFold(a.Login, owner) {
+			filtered = append(filtered, a)
+		}
+	}
+	return filtered
+}
+
+func distinctIdentityCount(authors []commitAuthor) int {
+	seen := make(map[string]struct{})
+	for _, a := range authors {
+		key := identityKey(a)
+		if key == "" {
+			continue
+		}
+		seen[key] = struct{}{}
+	}
+	return len(seen)
+}
+
+func identityKey(a commitAuthor) string {
+	switch {
+	case a.Login != "":
+		return "login:" + strings.ToLower(a.Login)
+	case a.Email != "":
+		return "email:" + strings.ToLower(a.Email)
+	case a.Name != "":
+		return "name:" + strings.ToLower(a.Name)
+	default:
+		return ""
+	}
+}
+
 func authorsToTraces(authors []commitAuthor) []entities.Trace {
 	seen := make(map[string]struct{})
 	var traces []entities.Trace

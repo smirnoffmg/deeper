@@ -3,6 +3,8 @@ package workerpool
 import (
 	"testing"
 
+	"github.com/smirnoffmg/deeper/internal/app/deeper/processor/tasks"
+	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -64,6 +66,60 @@ func TestDomainExtractor_ExtractDomain(t *testing.T) {
 			task:     nil,
 			expected: "",
 			hasError: true,
+		},
+		// Regression: this is the actual payload shape used in production
+		// (Processor.ProcessTrace submits *tasks.TraceProcessingTask, never
+		// a bare string) — found live against codescoring.ru, every task
+		// was falling into the shared "default" rate-limit bucket because
+		// fmt.Sprintf("%v", payload) on the struct never matched any of the
+		// email/URL/domain-only regexes.
+		{
+			name: "extract domain from real TraceProcessingTask payload (domain trace)",
+			task: &Task{
+				ID: "test-real-payload-domain",
+				Payload: &tasks.TraceProcessingTask{
+					Trace:     entities.Trace{Value: "codescoring.ru", Type: entities.Domain},
+					PluginKey: "CrtShPlugin",
+				},
+			},
+			expected: "codescoring.ru",
+			hasError: false,
+		},
+		{
+			name: "extract domain from real TraceProcessingTask payload (url trace)",
+			task: &Task{
+				ID: "test-real-payload-url",
+				Payload: &tasks.TraceProcessingTask{
+					Trace:     entities.Trace{Value: "https://codescoring.com/about", Type: entities.Url},
+					PluginKey: "URLResolverPlugin",
+				},
+			},
+			expected: "codescoring.com",
+			hasError: false,
+		},
+		{
+			name: "extract domain from real TraceProcessingTask payload (email trace)",
+			task: &Task{
+				ID: "test-real-payload-email",
+				Payload: &tasks.TraceProcessingTask{
+					Trace:     entities.Trace{Value: "alsmirn@gmail.com", Type: entities.Email},
+					PluginKey: "GravatarPlugin",
+				},
+			},
+			expected: "gmail.com",
+			hasError: false,
+		},
+		{
+			name: "TraceProcessingTask with non-domain value falls back to default",
+			task: &Task{
+				ID: "test-real-payload-username",
+				Payload: &tasks.TraceProcessingTask{
+					Trace:     entities.Trace{Value: "alsmirn", Type: entities.Username},
+					PluginKey: "SocialProfilesPlugin",
+				},
+			},
+			expected: "default",
+			hasError: false,
 		},
 		{
 			name: "nil payload",

@@ -151,10 +151,16 @@ func (wp *WorkerPool) Submit(ctx context.Context, task *Task) error {
 		return fmt.Errorf("task cannot be nil")
 	}
 
-	// Generate task ID if not provided
+	// Generate task ID if not provided. Prefer the payload's own stable
+	// identity (see deduplication.go's taskIdentifier) over stringifying
+	// the whole payload, which for *tasks.TraceProcessingTask embeds a
+	// live Plugin pointer that varies run to run.
 	if task.ID == "" {
-		// Use a simple hash of the payload for task ID
-		task.ID = fmt.Sprintf("%v", task.Payload)
+		if identifier, ok := task.Payload.(interface{ GetID() string }); ok {
+			task.ID = identifier.GetID()
+		} else {
+			task.ID = fmt.Sprintf("%v", task.Payload)
+		}
 	}
 
 	// Check deduplication if enabled

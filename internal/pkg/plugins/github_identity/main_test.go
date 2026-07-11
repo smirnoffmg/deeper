@@ -127,6 +127,34 @@ func TestFollowTrace_GitLabRepositoryTraceIsSkipped(t *testing.T) {
 	assert.Nil(t, traces)
 }
 
+func TestFollowTrace_SharedRepoOnlyReturnsOwnerTraces(t *testing.T) {
+	sharedRepoCommits := `[
+		{"author": {"login": "iloncka"}, "commit": {"author": {"name": "Ilona Kovaleva", "email": "iloncka@example.com"}, "committer": {"name": "Ilona Kovaleva", "email": "iloncka@example.com"}, "message": "init"}},
+		{"commit": {"author": {"name": "Erick Ramirez", "email": "erick@datastax.com"}, "committer": {"name": "Erick Ramirez", "email": "erick@datastax.com"}, "message": "a"}},
+		{"commit": {"author": {"name": "Stefano Lottini", "email": "stefano@datastax.com"}, "committer": {"name": "Stefano Lottini", "email": "stefano@datastax.com"}, "message": "b"}},
+		{"commit": {"author": {"name": "Cedrick Lunven", "email": "cedrick@datastax.com"}, "committer": {"name": "Cedrick Lunven", "email": "cedrick@datastax.com"}, "message": "c"}},
+		{"commit": {"author": {"name": "David Jones-Gilardi", "email": "david@datastax.com"}, "committer": {"name": "David Jones-Gilardi", "email": "david@datastax.com"}, "message": "d"}},
+		{"commit": {"author": {"name": "Kirsten Hunter", "email": "kirsten@datastax.com"}, "committer": {"name": "Kirsten Hunter", "email": "kirsten@datastax.com"}, "message": "e"}}
+	]`
+	fetcher := &fakeCommitFetcher{status: http.StatusOK, body: sharedRepoCommits}
+	p := testPlugin(fetcher)
+
+	traces, err := p.FollowTrace(entities.Trace{
+		Type:  entities.Repository,
+		Value: "https://github.com/iloncka/workshop-astra-tik-tok",
+	})
+	require.NoError(t, err)
+
+	for _, tr := range traces {
+		if tr.Type == entities.Email || tr.Type == entities.Name {
+			assert.NotContains(t, tr.Value, "datastax.com", "unrelated contributor from a large shared repo must not leak through")
+		}
+	}
+	assert.Contains(t, traces, entities.Trace{Type: entities.Name, Value: "Ilona Kovaleva"})
+	assert.Contains(t, traces, entities.Trace{Type: entities.Email, Value: "iloncka@example.com"})
+	assert.Contains(t, traces, entities.Trace{Type: entities.Username, Value: "iloncka"})
+}
+
 func TestFollowTrace_ForkedRepoIsSkipped(t *testing.T) {
 	metadataURL := "https://api.github.com/repos/alsmirn/youtube-dl"
 

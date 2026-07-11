@@ -142,11 +142,35 @@ func (dc *DeduplicationCache) IsDuplicate(ctx context.Context, task *Task) (bool
 	return false, nil
 }
 
-// generateTaskID generates a content-addressable hash for the task
+// generateTaskID generates a content-addressable hash for the task.
+//
+// Regression note: this used to fmt.Sprintf("%v", task.Payload) directly.
+// The real production payload (*tasks.TraceProcessingTask) embeds a live
+// Plugin pointer, which %v renders as a raw heap address — unique per
+// process — so cross-run persistent deduplication (the entire point of
+// this cache) could never actually hit. Verified live: identical logical
+// tasks in three separate process runs produced three different hashes.
+// Payloads that expose a stable identity (via taskIdentifier) use that
+// instead; plain values (e.g. bare strings in tests) keep the previous
+// stringify behavior, which is already stable for non-pointer content.
 func (dc *DeduplicationCache) generateTaskID(task *Task) string {
-	content := fmt.Sprintf("%v", task.Payload)
+	content := dc.payloadIdentity(task.Payload)
 	hash := sha256.Sum256([]byte(content))
 	return hex.EncodeToString(hash[:8])
+}
+
+// taskIdentifier is satisfied by *tasks.TraceProcessingTask. Defined
+// locally rather than importing the concrete type, matching the same
+// pkg -> app layering avoidance as domain.go's traceValueProvider.
+type taskIdentifier interface {
+	GetID() string
+}
+
+func (dc *DeduplicationCache) payloadIdentity(payload interface{}) string {
+	if identifier, ok := payload.(taskIdentifier); ok {
+		return identifier.GetID()
+	}
+	return fmt.Sprintf("%v", payload)
 }
 
 // checkPersistentCache checks if task exists in persistent cache

@@ -40,7 +40,27 @@ func extractEmails(text string) []string {
 }
 
 func extractPhones(text string) []string {
-	return uniqueStrings(phonePattern.FindAllString(text, -1))
+	candidates := phonePattern.FindAllString(text, -1)
+	matched := make([]string, 0, len(candidates))
+	for _, c := range candidates {
+		if looksLikePhone(c) {
+			matched = append(matched, c)
+		}
+	}
+	return uniqueStrings(matched)
+}
+
+// looksLikePhone rejects a shape-matched candidate that's actually just a
+// bare run of digits (a Telegram user ID, a tax ID, ...) — real phone
+// numbers as written on contact pages are essentially always either
+// "+"-prefixed or separated with spaces/dashes/dots/parens; a candidate
+// with neither is far more likely to be an unrelated numeric ID that
+// happens to be 10-13 digits long than an actual phone number.
+func looksLikePhone(value string) bool {
+	if strings.HasPrefix(value, "+") {
+		return true
+	}
+	return strings.ContainsAny(value, " -.()")
 }
 
 func mailtoTrace(href string) (entities.Trace, bool) {

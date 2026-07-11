@@ -56,6 +56,7 @@ func (p *GitHubIdentityPlugin) FollowTrace(trace entities.Trace) ([]entities.Tra
 	if err != nil {
 		return nil, err
 	}
+	authors = filterAuthorsForSharedRepo(authors, owner)
 	if len(authors) == 0 {
 		return nil, nil
 	}

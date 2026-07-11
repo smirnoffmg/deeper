@@ -41,6 +41,71 @@ func TestSearchCompany_ExtractsCompanyDirectorAndAddress(t *testing.T) {
 	}
 }
 
+// realDetailFixture mirrors the actual markup captured from list-org.com's
+// company detail page (/company/1412885) for ООО "ПРОФИСКОП".
+const realDetailFixture = `<i>Предприятия рядом:</i> <span class='upper'> <a href='/company/1692761'>ООО "ЛИДЕР"</a>,  <a href='/company/1407264'>ООО "АТМ78"</a>,  <a href='/company/1592570'>ООО "СЗТК ИДЕАЛ АВТО"</a>,  <a href='/company/1412931'>ООО  "СТРОЙ ПЛЮС"</a><!--/noindex--></span>`
+
+func expectedCompanyDetailURL(id string) string {
+	return "https://www.list-org.com/company/" + id
+}
+
+func TestSearchCompany_IncludesNearbyCompanies(t *testing.T) {
+	fetcher := &fakeSearchFetcher{
+		responses: map[string]fakeResponse{
+			expectedListOrgURL(t, "7813227385"): {status: http.StatusOK, body: realFixture},
+			expectedCompanyDetailURL("1412885"): {status: http.StatusOK, body: realDetailFixture},
+		},
+	}
+
+	traces, err := searchCompany(context.Background(), fetcher, "7813227385")
+	require.NoError(t, err)
+
+	var nearby []string
+	for _, tr := range traces {
+		if tr.Type == entities.Company {
+			nearby = append(nearby, tr.Value)
+		}
+	}
+	assert.Contains(t, nearby, `ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ "ПРОФИСКОП"`)
+	assert.Contains(t, nearby, `ООО "ЛИДЕР"`)
+	assert.Contains(t, nearby, `ООО "АТМ78"`)
+	assert.Contains(t, nearby, `ООО "СЗТК ИДЕАЛ АВТО"`)
+	assert.Contains(t, nearby, `ООО  "СТРОЙ ПЛЮС"`)
+}
+
+func TestSearchCompany_DetailPageFailureStillReturnsSearchTraces(t *testing.T) {
+	fetcher := &fakeSearchFetcher{
+		responses: map[string]fakeResponse{
+			expectedListOrgURL(t, "7813227385"): {status: http.StatusOK, body: realFixture},
+			expectedCompanyDetailURL("1412885"): {status: http.StatusForbidden, body: ""},
+		},
+	}
+
+	traces, err := searchCompany(context.Background(), fetcher, "7813227385")
+	require.NoError(t, err)
+	require.Len(t, traces, 3, "original search-page traces must survive a detail-page failure")
+}
+
+func TestParseNearbyCompanies(t *testing.T) {
+	names := parseNearbyCompanies(realDetailFixture)
+	assert.Equal(t, []string{`ООО "ЛИДЕР"`, `ООО "АТМ78"`, `ООО "СЗТК ИДЕАЛ АВТО"`, `ООО  "СТРОЙ ПЛЮС"`}, names)
+}
+
+func TestParseNearbyCompanies_NoSectionReturnsNil(t *testing.T) {
+	assert.Nil(t, parseNearbyCompanies(`<div>nothing here</div>`))
+}
+
+func TestExtractCompanyID(t *testing.T) {
+	id, ok := extractCompanyID(realFixture)
+	require.True(t, ok)
+	assert.Equal(t, "1412885", id)
+}
+
+func TestExtractCompanyID_NotFound(t *testing.T) {
+	_, ok := extractCompanyID(`<div>no link here</div>`)
+	assert.False(t, ok)
+}
+
 func TestSearchCompany_NoMatchReturnsNoTraces(t *testing.T) {
 	fetcher := &fakeSearchFetcher{
 		responses: map[string]fakeResponse{

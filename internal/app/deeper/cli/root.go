@@ -107,18 +107,7 @@ func createEngine() (*engine.Engine, *database.Repository, error) {
 	cfg := config.LoadConfig()
 
 	// Override with CLI flags if provided
-	if timeout != 0 {
-		cfg.HTTPTimeout = timeout
-	}
-	if concurrency != 0 {
-		cfg.MaxConcurrency = concurrency
-	}
-	if rateLimit != 0 {
-		cfg.RateLimitPerSecond = rateLimit
-	}
-	if logLevel != "" {
-		cfg.LogLevel = logLevel
-	}
+	applyCLIOverrides(cfg, timeout, concurrency, rateLimit, logLevel)
 
 	metricsCollector := metrics.GetGlobalMetrics()
 
@@ -137,6 +126,25 @@ func createEngine() (*engine.Engine, *database.Repository, error) {
 	cache := database.NewCache(repo)
 
 	return engine.NewEngine(cfg, metricsCollector, repo, cache), repo, nil
+}
+
+// applyCLIOverrides applies non-zero/non-empty CLI flag values onto cfg.
+// timeout deliberately does NOT set cfg.HTTPTimeout — it controls the
+// scan-wide deadline (scan.go's context.WithTimeout) only. Conflating the
+// two meant every individual HTTP request shared the same ~5-minute budget
+// as the whole scan, letting one slow request stall a worker for the
+// entire run. Per-request HTTP timeout is configured independently via
+// DEEPER_HTTP_TIMEOUT (see config.LoadConfig).
+func applyCLIOverrides(cfg *config.Config, _ time.Duration, concurrency, rateLimit int, logLevel string) {
+	if concurrency != 0 {
+		cfg.MaxConcurrency = concurrency
+	}
+	if rateLimit != 0 {
+		cfg.RateLimitPerSecond = rateLimit
+	}
+	if logLevel != "" {
+		cfg.LogLevel = logLevel
+	}
 }
 
 func createDisplay() *display.Display {

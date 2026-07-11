@@ -186,6 +186,66 @@ func TestParseCoAuthors(t *testing.T) {
 	}
 }
 
+func TestDistinctIdentityCount(t *testing.T) {
+	authors := []commitAuthor{
+		{Login: "alsmirn", Name: "Alexey Smirnov", Email: "alsmirn@gmail.com"},
+		{Login: "alsmirn", Name: "Alexey Smirnov", Email: "alsmirn@gmail.com"}, // duplicate
+		{Name: "Serge Matveenko", Email: "s@matveenko.ru"},                     // no login
+		{Name: "Someone Else"}, // no login, no email
+	}
+	assert.Equal(t, 3, distinctIdentityCount(authors))
+}
+
+func TestDistinctIdentityCount_EmptyEntriesIgnored(t *testing.T) {
+	assert.Equal(t, 0, distinctIdentityCount([]commitAuthor{{}}))
+}
+
+func TestFilterAuthorsForSharedRepo_SmallRepoKeepsEveryone(t *testing.T) {
+	authors := []commitAuthor{
+		{Login: "alsmirn", Name: "Alexey Smirnov"},
+		{Name: "Serge Matveenko", Email: "s@matveenko.ru"},
+	}
+
+	filtered := filterAuthorsForSharedRepo(authors, "alsmirn")
+	assert.Equal(t, authors, filtered)
+}
+
+// TestFilterAuthorsForSharedRepo_LargeRepoKeepsOnlyOwner is a regression
+// test found live against codescoring.ru: iloncka/workshop-astra-tik-tok
+// (not a fork — isFork correctly reports false) turned out to have commits
+// from several unrelated DataStax employees, leaking their names/emails
+// into the graph purely because iloncka once contributed to a shared
+// workshop repo. A repo with many distinct contributors is unlikely to
+// represent personal connections; only the repo owner's own commits should
+// be trusted in that case.
+func TestFilterAuthorsForSharedRepo_LargeRepoKeepsOnlyOwner(t *testing.T) {
+	authors := []commitAuthor{
+		{Login: "iloncka", Name: "Ilona Kovaleva"},
+		{Name: "Erick Ramirez", Email: "erick@datastax.com"},
+		{Name: "Stefano Lottini", Email: "stefano@datastax.com"},
+		{Name: "Cedrick Lunven", Email: "cedrick@datastax.com"},
+		{Name: "David Jones-Gilardi", Email: "david@datastax.com"},
+		{Name: "Kirsten Hunter", Email: "kirsten@datastax.com"},
+	}
+
+	filtered := filterAuthorsForSharedRepo(authors, "iloncka")
+	require.Len(t, filtered, 1)
+	assert.Equal(t, "iloncka", filtered[0].Login)
+}
+
+func TestFilterAuthorsForSharedRepo_OwnerMatchIsCaseInsensitive(t *testing.T) {
+	authors := []commitAuthor{
+		{Login: "Iloncka", Name: "Ilona Kovaleva"},
+		{Name: "A", Email: "a@x.com"}, {Name: "B", Email: "b@x.com"},
+		{Name: "C", Email: "c@x.com"}, {Name: "D", Email: "d@x.com"},
+		{Name: "E", Email: "e@x.com"},
+	}
+
+	filtered := filterAuthorsForSharedRepo(authors, "iloncka")
+	require.Len(t, filtered, 1)
+	assert.Equal(t, "Iloncka", filtered[0].Login)
+}
+
 func TestAuthorsToTraces(t *testing.T) {
 	authors := []commitAuthor{
 		{Name: "Alexey Smirnov", Email: "alex@example.com", Login: "alsmirn"},

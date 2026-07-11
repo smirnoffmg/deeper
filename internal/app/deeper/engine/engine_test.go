@@ -101,7 +101,8 @@ func TestEngine_ProcessInput_PersistsEdgeChain(t *testing.T) {
 
 	traces, err := eng.ProcessInput(context.Background(), "root", session.ID)
 	require.NoError(t, err)
-	assert.Len(t, traces, 2)
+	assert.Len(t, traces, 3, "seed trace (root) plus hop2 and hop3")
+	assert.Contains(t, traces, entities.Trace{Value: "root", Type: testEngineTraceType})
 
 	hop3ID, err := repo.GetOrCreateTrace(entities.Trace{Value: "hop3", Type: testEngineTraceType})
 	require.NoError(t, err)
@@ -116,6 +117,40 @@ func TestEngine_ProcessInput_PersistsEdgeChain(t *testing.T) {
 	reachable, err := repo.GetReachableTraces(session.ID, rootID, 5)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, len(reachable), 3)
+}
+
+// TestEngine_ProcessInput_SeedNotReprocessedWhenRediscovered is a
+// regression test: the seed trace must be marked as already-seen up front,
+// so a plugin that happens to rediscover the exact same (value, type) pair
+// as a "new" child doesn't cause it to be queued and processed a second
+// time.
+func TestEngine_ProcessInput_SeedNotReprocessedWhenRediscovered(t *testing.T) {
+	original := state.ActivePlugins[testEngineTraceType]
+	t.Cleanup(func() {
+		if original == nil {
+			delete(state.ActivePlugins, testEngineTraceType)
+			return
+		}
+		state.ActivePlugins[testEngineTraceType] = original
+	})
+
+	state.ActivePlugins[testEngineTraceType] = nil
+	require.NoError(t, (&chainPlugin{name: "rediscovers-seed", input: "root", output: "root"}).Register())
+
+	eng, repo := setupEngine(t)
+	session, err := repo.CreateScanSession("root")
+	require.NoError(t, err)
+
+	traces, err := eng.ProcessInput(context.Background(), "root", session.ID)
+	require.NoError(t, err)
+
+	count := 0
+	for _, tr := range traces {
+		if tr == (entities.Trace{Value: "root", Type: testEngineTraceType}) {
+			count++
+		}
+	}
+	assert.Equal(t, 1, count, "seed must appear exactly once even if rediscovered as a child")
 }
 
 func TestEngine_ProcessInput_MultiParentPersistence(t *testing.T) {
