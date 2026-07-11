@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
+	"github.com/smirnoffmg/deeper/internal/pkg/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -100,6 +101,54 @@ func TestFollowTrace_ValidRepo(t *testing.T) {
 	assert.True(t, types[entities.Username])
 }
 
+func TestFollowTrace_RepositoryTraceTypeIsFollowed(t *testing.T) {
+	fetcher := &fakeCommitFetcher{
+		status: http.StatusOK,
+		body:   sampleCommitsJSON,
+	}
+	p := testPlugin(fetcher)
+
+	traces, err := p.FollowTrace(entities.Trace{
+		Type:  entities.Repository,
+		Value: "https://github.com/alsmirn/gyt",
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, traces)
+}
+
+func TestFollowTrace_GitLabRepositoryTraceIsSkipped(t *testing.T) {
+	p := testPlugin(&fakeCommitFetcher{})
+
+	traces, err := p.FollowTrace(entities.Trace{
+		Type:  entities.Repository,
+		Value: "https://gitlab.com/owner/repo",
+	})
+	require.NoError(t, err)
+	assert.Nil(t, traces)
+}
+
+func TestFollowTrace_ForkedRepoIsSkipped(t *testing.T) {
+	metadataURL := "https://api.github.com/repos/alsmirn/youtube-dl"
+
+	fetcher := &fakeCommitFetcher{
+		responses: map[string]fakeCommitResponse{
+			metadataURL: {status: http.StatusOK, body: `{"fork": true}`},
+			// No entry for commitsURL: if FollowTrace incorrectly proceeds to
+			// fetch commits anyway, this fake's fallback (status 0, empty
+			// body) will fail JSON decoding and surface as a bug, not a pass.
+		},
+	}
+	p := testPlugin(fetcher)
+
+	traces, err := p.FollowTrace(entities.Trace{
+		Type:  entities.Repository,
+		Value: "https://github.com/alsmirn/youtube-dl",
+	})
+	require.NoError(t, err)
+	assert.Nil(t, traces)
+	assert.Equal(t, metadataURL, fetcher.lastReq.URL.String(), "commits endpoint must not be reached for a fork")
+}
+
 func TestFollowTrace_OrgRootRejected(t *testing.T) {
 	p := testPlugin(&fakeCommitFetcher{})
 	traces, err := p.FollowTrace(entities.Trace{
@@ -147,15 +196,49 @@ func TestString(t *testing.T) {
 	assert.Equal(t, "GitHubIdentityPlugin", p.String())
 }
 
+func TestRegister_RegistersUnderGithubAndRepository(t *testing.T) {
+	p := NewPlugin()
+	require.NoError(t, p.Register())
+
+	for _, traceType := range []entities.TraceType{entities.Github, entities.Repository} {
+		found := false
+		for _, registered := range state.ActivePlugins[traceType] {
+			if registered == p {
+				found = true
+			}
+		}
+		assert.Truef(t, found, "expected plugin registered for %v", traceType)
+	}
+}
+
+type fakeCommitResponse struct {
+	status int
+	body   string
+}
+
 type fakeCommitFetcher struct {
 	status  int
 	body    string
 	headers http.Header
 	lastReq *http.Request
+
+	// responses, if set, routes by exact request URL; falls back to the
+	// single status/body above for any URL not present in the map.
+	responses map[string]fakeCommitResponse
 }
 
 func (f *fakeCommitFetcher) Do(req *http.Request) (*http.Response, error) {
 	f.lastReq = req
+
+	if resp, ok := f.responses[req.URL.String()]; ok {
+		return &http.Response{
+			StatusCode: resp.status,
+			Body:       io.NopCloser(strings.NewReader(resp.body)),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	}
+
 	headers := f.headers
 	if headers == nil {
 		headers = make(http.Header)

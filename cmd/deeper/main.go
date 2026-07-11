@@ -15,6 +15,7 @@ import (
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/dns_resolver"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/facebook"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/github_identity"
+	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/github_keys"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/gravatar"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/ip_intel"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/social_profiles"

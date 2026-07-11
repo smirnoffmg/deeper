@@ -1,10 +1,13 @@
 package github_identity
 
 import (
+	"context"
+	"net/http"
 	"testing"
 
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseOwnerRepo(t *testing.T) {
@@ -64,6 +67,121 @@ func TestParseOwnerRepo(t *testing.T) {
 				assert.Equal(t, tt.wantOwner, owner)
 				assert.Equal(t, tt.wantRepo, repo)
 			}
+		})
+	}
+}
+
+func TestIsFork_True(t *testing.T) {
+	fetcher := &fakeCommitFetcher{status: http.StatusOK, body: `{"fork": true}`}
+	assert.True(t, isFork(context.Background(), fetcher, "owner", "repo", ""))
+}
+
+func TestIsFork_False(t *testing.T) {
+	fetcher := &fakeCommitFetcher{status: http.StatusOK, body: `{"fork": false}`}
+	assert.False(t, isFork(context.Background(), fetcher, "owner", "repo", ""))
+}
+
+func TestIsFork_MalformedJSONTreatedAsNotFork(t *testing.T) {
+	fetcher := &fakeCommitFetcher{status: http.StatusOK, body: `not json`}
+	assert.False(t, isFork(context.Background(), fetcher, "owner", "repo", ""))
+}
+
+func TestIsFork_NonOKStatusTreatedAsNotFork(t *testing.T) {
+	fetcher := &fakeCommitFetcher{status: http.StatusNotFound, body: `{"message":"Not Found"}`}
+	assert.False(t, isFork(context.Background(), fetcher, "owner", "repo", ""))
+}
+
+func TestParseCommitAuthors_CommitterDiffersFromAuthor(t *testing.T) {
+	body := []byte(`[{
+		"author": {"login": "alsmirn"},
+		"commit": {
+			"author": {"name": "Alexey Smirnov", "email": "alsmirn@gmail.com"},
+			"committer": {"name": "Someone Else", "email": "someone@example.com"},
+			"message": "a commit"
+		}
+	}]`)
+
+	authors := parseCommitAuthors(body)
+
+	require.Len(t, authors, 2)
+	assert.Equal(t, "Alexey Smirnov", authors[0].Name)
+	assert.Equal(t, "alsmirn@gmail.com", authors[0].Email)
+	assert.Equal(t, "alsmirn", authors[0].Login)
+	assert.Equal(t, "Someone Else", authors[1].Name)
+	assert.Equal(t, "someone@example.com", authors[1].Email)
+	assert.Empty(t, authors[1].Login)
+}
+
+func TestParseCommitAuthors_IdenticalCommitterIsStillEmitted(t *testing.T) {
+	// authorsToTraces already dedupes downstream by type+value, so
+	// parseCommitAuthors doesn't need its own identity check here.
+	body := []byte(`[{
+		"commit": {
+			"author": {"name": "Alexey Smirnov", "email": "alsmirn@gmail.com"},
+			"committer": {"name": "Alexey Smirnov", "email": "alsmirn@gmail.com"},
+			"message": "a commit"
+		}
+	}]`)
+
+	authors := parseCommitAuthors(body)
+
+	require.Len(t, authors, 2)
+	assert.Equal(t, authors[0].Name, authors[1].Name)
+	assert.Equal(t, authors[0].Email, authors[1].Email)
+}
+
+func TestParseCommitAuthors_CoAuthorTrailer(t *testing.T) {
+	body := []byte(`[{
+		"commit": {
+			"author": {"name": "Alexey Smirnov", "email": "alsmirn@gmail.com"},
+			"committer": {"name": "Alexey Smirnov", "email": "alsmirn@gmail.com"},
+			"message": "Fix bug\n\nCo-authored-by: Serge Matveenko <s@matveenko.ru>"
+		}
+	}]`)
+
+	authors := parseCommitAuthors(body)
+
+	require.Len(t, authors, 3)
+	assert.Equal(t, "Serge Matveenko", authors[2].Name)
+	assert.Equal(t, "s@matveenko.ru", authors[2].Email)
+	assert.Empty(t, authors[2].Login)
+}
+
+func TestParseCoAuthors(t *testing.T) {
+	tests := []struct {
+		name    string
+		message string
+		want    []commitAuthor
+	}{
+		{
+			name:    "single trailer",
+			message: "Fix bug\n\nCo-authored-by: Serge Matveenko <s@matveenko.ru>",
+			want:    []commitAuthor{{Name: "Serge Matveenko", Email: "s@matveenko.ru"}},
+		},
+		{
+			name: "multiple trailers",
+			message: "Fix bug\n\nCo-authored-by: A One <a@example.com>\n" +
+				"Co-authored-by: B Two <b@example.com>",
+			want: []commitAuthor{
+				{Name: "A One", Email: "a@example.com"},
+				{Name: "B Two", Email: "b@example.com"},
+			},
+		},
+		{
+			name:    "case-insensitive prefix",
+			message: "Fix bug\n\nco-authored-by: A One <a@example.com>",
+			want:    []commitAuthor{{Name: "A One", Email: "a@example.com"}},
+		},
+		{
+			name:    "no trailer",
+			message: "Just a normal commit message",
+			want:    nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, parseCoAuthors(tt.message))
 		})
 	}
 }

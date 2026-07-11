@@ -10,8 +10,6 @@ import (
 	"github.com/smirnoffmg/deeper/internal/pkg/state"
 )
 
-const InputTraceType = entities.Github
-
 func init() {
 	p := NewPlugin()
 	if err := p.Register(); err != nil {
@@ -33,12 +31,13 @@ func NewPlugin() *GitHubIdentityPlugin {
 }
 
 func (p *GitHubIdentityPlugin) Register() error {
-	state.RegisterPlugin(InputTraceType, p)
+	state.RegisterPlugin(entities.Github, p)
+	state.RegisterPlugin(entities.Repository, p)
 	return nil
 }
 
 func (p *GitHubIdentityPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
-	if trace.Type != InputTraceType {
+	if trace.Type != entities.Github && trace.Type != entities.Repository {
 		return nil, nil
 	}
 
@@ -47,7 +46,13 @@ func (p *GitHubIdentityPlugin) FollowTrace(trace entities.Trace) ([]entities.Tra
 		return nil, nil
 	}
 
-	authors, err := fetchCommitAuthors(context.Background(), p.fetcher, owner, repo, p.token)
+	ctx := context.Background()
+
+	if isFork(ctx, p.fetcher, owner, repo, p.token) {
+		return nil, nil
+	}
+
+	authors, err := fetchCommitAuthors(ctx, p.fetcher, owner, repo, p.token)
 	if err != nil {
 		return nil, err
 	}
