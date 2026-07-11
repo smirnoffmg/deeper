@@ -1,7 +1,6 @@
 package dns_records
 
 import (
-	"net"
 	"testing"
 
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
@@ -10,10 +9,7 @@ import (
 )
 
 func TestDNSRecordsPlugin_FollowTrace_WrongType(t *testing.T) {
-	plugin := &DNSRecordsPlugin{
-		lookups: &fakeDNSLookups{},
-		doh:     &fakeDoHFetcher{},
-	}
+	plugin := &DNSRecordsPlugin{doh: &fakeDoHFetcher{}}
 
 	traces, err := plugin.FollowTrace(entities.Trace{Value: "1.2.3.4", Type: entities.IpAddr})
 
@@ -23,10 +19,11 @@ func TestDNSRecordsPlugin_FollowTrace_WrongType(t *testing.T) {
 
 func TestDNSRecordsPlugin_FollowTrace_SkipsWildcard(t *testing.T) {
 	plugin := &DNSRecordsPlugin{
-		lookups: &fakeDNSLookups{
-			mx: []*net.MX{{Host: "mail.example.com.", Pref: 10}},
+		doh: &fakeDoHFetcher{
+			responses: map[string]string{
+				mxURL("*.example.com"): `{"Status":0,"Answer":[{"name":"*.example.com.","type":15,"data":"10 mail.example.com."}]}`,
+			},
 		},
-		doh: &fakeDoHFetcher{},
 	}
 
 	traces, err := plugin.FollowTrace(entities.Trace{Value: "*.example.com", Type: entities.Domain})
@@ -38,14 +35,12 @@ func TestDNSRecordsPlugin_FollowTrace_SkipsWildcard(t *testing.T) {
 func TestDNSRecordsPlugin_FollowTrace_AllRecordTypes(t *testing.T) {
 	domain := "example.com"
 	plugin := &DNSRecordsPlugin{
-		lookups: &fakeDNSLookups{
-			mx:    []*net.MX{{Host: "mail.example.com.", Pref: 10}},
-			txt:   []string{"v=spf1 ~all"},
-			ns:    []*net.NS{{Host: "ns.example.com."}},
-			cname: "cdn.example.net.",
-		},
 		doh: &fakeDoHFetcher{
 			responses: map[string]string{
+				mxURL(domain):    `{"Status":0,"Answer":[{"name":"example.com.","type":15,"data":"10 mail.example.com."}]}`,
+				txtURL(domain):   `{"Status":0,"Answer":[{"name":"example.com.","type":16,"data":"v=spf1 ~all"}]}`,
+				nsURL(domain):    `{"Status":0,"Answer":[{"name":"example.com.","type":2,"data":"ns.example.com."}]}`,
+				cnameURL(domain): `{"Status":0}`,
 				soaURL(domain): `{
 					"Status": 0,
 					"Answer": [{
@@ -75,28 +70,21 @@ func TestDNSRecordsPlugin_FollowTrace_AllRecordTypes(t *testing.T) {
 	assert.Contains(t, types, entities.DnsRecordMX)
 	assert.Contains(t, types, entities.DnsRecordTXT)
 	assert.Contains(t, types, entities.DnsRecordNS)
-	assert.Contains(t, types, entities.DnsRecordCNAME)
 	assert.Contains(t, types, entities.DnsRecordSOA)
 	assert.Contains(t, types, entities.DnsRecordCAA)
 	assert.Contains(t, types, entities.Email)
 }
 
-// TestDNSRecordsPlugin_FollowTrace_StdlibFailureStillReturnsDoH is a
+// TestDNSRecordsPlugin_FollowTrace_PartialDoHFailureStillReturnsOthers is a
 // regression test for a bug found live against codescoring.ru: FollowTrace
-// used to return early (losing all results) whenever any stdlib lookup
-// (MX/TXT/NS/CNAME) errored, even though the independent DoH-backed SOA/CAA
-// lookups had already succeeded or would have succeeded. Verified externally
-// that Google's DoH endpoint resolves fine in environments where raw UDP
-// DNS-53 queries are refused.
-func TestDNSRecordsPlugin_FollowTrace_StdlibFailureStillReturnsDoH(t *testing.T) {
+// used to return early (losing all results) whenever any lookup errored. All
+// six record types are now independent DoH requests — this test simulates
+// an environment where raw UDP DNS-53 queries are refused (which used to
+// take out MX/TXT/NS/CNAME entirely, back when they went through stdlib) by
+// failing one DoH request and confirming the rest still come through.
+func TestDNSRecordsPlugin_FollowTrace_PartialDoHFailureStillReturnsOthers(t *testing.T) {
 	domain := "example.com"
 	plugin := &DNSRecordsPlugin{
-		lookups: &fakeDNSLookups{
-			mxErr:    net.UnknownNetworkError("connection refused"),
-			txtErr:   net.UnknownNetworkError("connection refused"),
-			nsErr:    net.UnknownNetworkError("connection refused"),
-			cnameErr: net.UnknownNetworkError("connection refused"),
-		},
 		doh: &fakeDoHFetcher{
 			responses: map[string]string{
 				soaURL(domain): `{
@@ -107,6 +95,12 @@ func TestDNSRecordsPlugin_FollowTrace_StdlibFailureStillReturnsDoH(t *testing.T)
 						"data": "ns1.example.com. hostmaster.example.com. 2024010100 7200 3600 1209600 3600"
 					}]
 				}`,
+			},
+			errURLs: map[string]bool{
+				mxURL(domain):    true,
+				txtURL(domain):   true,
+				nsURL(domain):    true,
+				cnameURL(domain): true,
 			},
 		},
 	}
@@ -123,14 +117,16 @@ func TestDNSRecordsPlugin_FollowTrace_StdlibFailureStillReturnsDoH(t *testing.T)
 }
 
 func TestDNSRecordsPlugin_FollowTrace_Subdomain(t *testing.T) {
+	domain := "www.example.com"
 	plugin := &DNSRecordsPlugin{
-		lookups: &fakeDNSLookups{
-			txt: []string{"verified"},
+		doh: &fakeDoHFetcher{
+			responses: map[string]string{
+				txtURL(domain): `{"Status":0,"Answer":[{"name":"www.example.com.","type":16,"data":"verified"}]}`,
+			},
 		},
-		doh: &fakeDoHFetcher{},
 	}
 
-	traces, err := plugin.FollowTrace(entities.Trace{Value: "www.example.com", Type: entities.Subdomain})
+	traces, err := plugin.FollowTrace(entities.Trace{Value: domain, Type: entities.Subdomain})
 
 	require.NoError(t, err)
 	require.Len(t, traces, 1)
@@ -151,4 +147,3 @@ func traceTypes(traces []entities.Trace) []entities.TraceType {
 }
 
 var _ dohFetcher = (*fakeDoHFetcher)(nil)
-var _ dnsLookups = (*fakeDNSLookups)(nil)

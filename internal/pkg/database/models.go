@@ -20,12 +20,12 @@ type Trace struct {
 
 // TraceEdge represents a parent→plugin→child discovery link within a scan.
 type TraceEdge struct {
-	ID            int64      `json:"id" db:"id"`
-	ParentTraceID *int64     `json:"parent_trace_id" db:"parent_trace_id"`
-	ChildTraceID  int64      `json:"child_trace_id" db:"child_trace_id"`
-	PluginName    string     `json:"plugin_name" db:"plugin_name"`
-	ScanID        int64      `json:"scan_id" db:"scan_id"`
-	DiscoveredAt  time.Time  `json:"discovered_at" db:"discovered_at"`
+	ID            int64     `json:"id" db:"id"`
+	ParentTraceID *int64    `json:"parent_trace_id" db:"parent_trace_id"`
+	ChildTraceID  int64     `json:"child_trace_id" db:"child_trace_id"`
+	PluginName    string    `json:"plugin_name" db:"plugin_name"`
+	ScanID        int64     `json:"scan_id" db:"scan_id"`
+	DiscoveredAt  time.Time `json:"discovered_at" db:"discovered_at"`
 }
 
 // ReachableTrace is a trace reachable from a start node within a hop budget.
@@ -118,15 +118,6 @@ func (t *Trace) ToEntity() entities.Trace {
 	return entities.Trace{
 		Value: t.Value,
 		Type:  t.Type,
-	}
-}
-
-// FromEntity converts an entities.Trace to a database Trace
-func FromEntity(trace entities.Trace) *Trace {
-	return &Trace{
-		Value:        trace.Value,
-		Type:         trace.Type,
-		DiscoveredAt: time.Now(),
 	}
 }
 

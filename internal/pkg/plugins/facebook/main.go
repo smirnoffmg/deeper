@@ -1,4 +1,4 @@
-package academicpapers
+package facebook
 
 import (
 	"context"
@@ -17,37 +17,37 @@ func init() {
 	}
 }
 
-type AcademicPapersPlugin struct {
+type FacebookPlugin struct {
 	fetcher searchFetcher
 }
 
-func NewPlugin() *AcademicPapersPlugin {
-	return &AcademicPapersPlugin{fetcher: deeperhttp.NewClient(config.LoadConfig())}
+func NewPlugin() *FacebookPlugin {
+	return &FacebookPlugin{fetcher: deeperhttp.NewClient(config.LoadConfig())}
 }
 
-func (g *AcademicPapersPlugin) Register() error {
+func (g *FacebookPlugin) Register() error {
 	state.RegisterPlugin(entities.Username, g)
 	state.RegisterPlugin(entities.Name, g)
 	return nil
 }
 
-func (g *AcademicPapersPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
+func (g *FacebookPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
 	if trace.Type != entities.Username && trace.Type != entities.Name {
 		return nil, nil
 	}
 
-	urls, err := searchAuthorPapers(context.Background(), g.fetcher, trace.Value)
+	profiles, err := searchFacebookProfiles(context.Background(), g.fetcher, trace.Value)
 	if err != nil {
 		return nil, err
 	}
 
 	var newTraces []entities.Trace
-	for _, u := range urls {
-		newTraces = append(newTraces, entities.Trace{Value: u, Type: entities.Url})
+	for _, profile := range profiles {
+		newTraces = append(newTraces, entities.Trace{Value: profile, Type: entities.Url})
 	}
 	return newTraces, nil
 }
 
-func (g AcademicPapersPlugin) String() string {
-	return "AcademicPapersPlugin"
+func (g FacebookPlugin) String() string {
+	return "FacebookPlugin"
 }

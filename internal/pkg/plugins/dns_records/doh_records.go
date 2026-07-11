@@ -14,9 +14,13 @@ import (
 )
 
 const (
-	dohBaseURL    = "https://dns.google/resolve"
-	dohTypeSOA    = "SOA"
-	dohTypeCAA    = "CAA"
+	dohBaseURL   = "https://dns.google/resolve"
+	dohTypeMX    = "MX"
+	dohTypeTXT   = "TXT"
+	dohTypeNS    = "NS"
+	dohTypeCNAME = "CNAME"
+	dohTypeSOA   = "SOA"
+	dohTypeCAA   = "CAA"
 )
 
 type dohFetcher interface {
@@ -32,19 +36,63 @@ type dohResponse struct {
 	} `json:"Answer"`
 }
 
+// lookupDoHRecords fetches all six record types independently over
+// DNS-over-HTTPS. Each is its own HTTP request: one type failing (rate
+// limit, transient network error) must not suppress the others. DoH is used
+// for every type here, not just SOA/CAA (which stdlib's net.Resolver can't
+// look up at all) — some environments refuse raw DNS wire queries over
+// UDP/TCP port 53 entirely while outbound HTTPS works fine, so routing
+// MX/TXT/NS/CNAME through DoH too makes this plugin resolver-independent.
 func lookupDoHRecords(ctx context.Context, name string, fetcher dohFetcher) []entities.Trace {
 	var traces []entities.Trace
 
-	soaTraces := fetchDoHType(ctx, name, dohTypeSOA, entities.DnsRecordSOA, fetcher)
-	traces = append(traces, soaTraces...)
-
-	caaTraces := fetchDoHType(ctx, name, dohTypeCAA, entities.DnsRecordCAA, fetcher)
-	traces = append(traces, caaTraces...)
+	traces = append(traces, fetchDoHType(ctx, name, dohTypeMX, entities.DnsRecordMX, fetcher, mxHostValue)...)
+	traces = append(traces, fetchDoHType(ctx, name, dohTypeTXT, entities.DnsRecordTXT, fetcher, identityValue)...)
+	traces = append(traces, fetchDoHType(ctx, name, dohTypeNS, entities.DnsRecordNS, fetcher, identityValue)...)
+	traces = append(traces, fetchDoHType(ctx, name, dohTypeCNAME, entities.DnsRecordCNAME, fetcher, cnameValue(name))...)
+	traces = append(traces, fetchDoHType(ctx, name, dohTypeSOA, entities.DnsRecordSOA, fetcher, identityValue)...)
+	traces = append(traces, fetchDoHType(ctx, name, dohTypeCAA, entities.DnsRecordCAA, fetcher, identityValue)...)
 
 	return traces
 }
 
-func fetchDoHType(ctx context.Context, name, recordType string, traceType entities.TraceType, fetcher dohFetcher) []entities.Trace {
+// valueOf extracts the trace value from a DoH answer's raw data field, or
+// reports ok=false to skip that answer (e.g. a self-referential CNAME).
+type valueOf func(data string) (string, bool)
+
+func identityValue(data string) (string, bool) {
+	return data, true
+}
+
+// mxHostValue parses DoH's "<preference> <host>" MX data format (e.g.
+// "10 ALT4.ASPMX.L.GOOGLE.COM.", verified against dns.google/resolve) and
+// drops the numeric preference, matching stdlib's net.MX.Host convention.
+func mxHostValue(data string) (string, bool) {
+	fields := strings.Fields(data)
+	if len(fields) < 2 {
+		return "", false
+	}
+	return fields[len(fields)-1], true
+}
+
+func cnameValue(queried string) valueOf {
+	return func(data string) (string, bool) {
+		if isSelfReferentialCNAME(queried, data) {
+			return "", false
+		}
+		return data, true
+	}
+}
+
+func isSelfReferentialCNAME(queried, cname string) bool {
+	return normalizeDNSName(queried) == normalizeDNSName(cname)
+}
+
+func normalizeDNSName(name string) string {
+	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(name)), ".")
+}
+
+func fetchDoHType(ctx context.Context, name, recordType string, traceType entities.TraceType, fetcher dohFetcher, valueOf valueOf) []entities.Trace {
 	reqURL := fmt.Sprintf("%s?name=%s&type=%s", dohBaseURL, url.QueryEscape(name), recordType)
 
 	resp, err := fetcher.Get(ctx, reqURL)
@@ -71,9 +119,13 @@ func fetchDoHType(ctx context.Context, name, recordType string, traceType entiti
 		if answer.Data == "" {
 			continue
 		}
+		value, ok := valueOf(answer.Data)
+		if !ok {
+			continue
+		}
 		traces = append(traces, entities.Trace{
 			Type:  traceType,
-			Value: answer.Data,
+			Value: value,
 		})
 
 		if traceType == entities.DnsRecordSOA {

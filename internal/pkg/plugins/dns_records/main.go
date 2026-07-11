@@ -2,7 +2,6 @@ package dns_records
 
 import (
 	"context"
-	"net"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -20,14 +19,12 @@ func init() {
 }
 
 type DNSRecordsPlugin struct {
-	lookups dnsLookups
-	doh     dohFetcher
+	doh dohFetcher
 }
 
 func NewPlugin() *DNSRecordsPlugin {
 	return &DNSRecordsPlugin{
-		lookups: net.DefaultResolver,
-		doh:     deeperhttp.NewClient(config.LoadConfig()),
+		doh: deeperhttp.NewClient(config.LoadConfig()),
 	}
 }
 
@@ -46,13 +43,7 @@ func (p *DNSRecordsPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, 
 		return nil, nil
 	}
 
-	ctx := context.Background()
-
-	var traces []entities.Trace
-	traces = append(traces, lookupStdlibRecords(ctx, trace.Value, p.lookups)...)
-	traces = append(traces, lookupDoHRecords(ctx, trace.Value, p.doh)...)
-
-	return traces, nil
+	return lookupDoHRecords(context.Background(), trace.Value, p.doh), nil
 }
 
 func (p *DNSRecordsPlugin) String() string {

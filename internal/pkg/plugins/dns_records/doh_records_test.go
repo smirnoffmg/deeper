@@ -16,11 +16,15 @@ import (
 type fakeDoHFetcher struct {
 	responses map[string]string
 	err       error
+	errURLs   map[string]bool
 }
 
 func (f *fakeDoHFetcher) Get(ctx context.Context, url string) (*http.Response, error) {
 	if f.err != nil {
 		return nil, f.err
+	}
+	if f.errURLs[url] {
+		return nil, fmt.Errorf("simulated error for %s", url)
 	}
 	body, ok := f.responses[url]
 	if !ok {
@@ -41,6 +45,22 @@ func soaURL(domain string) string {
 
 func caaURL(domain string) string {
 	return fmt.Sprintf("https://dns.google/resolve?name=%s&type=CAA", domain)
+}
+
+func mxURL(domain string) string {
+	return fmt.Sprintf("https://dns.google/resolve?name=%s&type=MX", domain)
+}
+
+func txtURL(domain string) string {
+	return fmt.Sprintf("https://dns.google/resolve?name=%s&type=TXT", domain)
+}
+
+func nsURL(domain string) string {
+	return fmt.Sprintf("https://dns.google/resolve?name=%s&type=NS", domain)
+}
+
+func cnameURL(domain string) string {
+	return fmt.Sprintf("https://dns.google/resolve?name=%s&type=CNAME", domain)
 }
 
 func TestLookupDoHRecords_SOAAndCAA(t *testing.T) {
@@ -83,12 +103,158 @@ func TestLookupDoHRecords_SOAAndCAA(t *testing.T) {
 	assert.Equal(t, "hostmaster@example.com", emailTrace.Value)
 }
 
+func TestLookupDoHRecords_MX(t *testing.T) {
+	domain := "example.com"
+	fetcher := &fakeDoHFetcher{
+		responses: map[string]string{
+			mxURL(domain): `{
+				"Status": 0,
+				"Answer": [
+					{"name": "example.com.", "type": 15, "data": "10 ALT4.ASPMX.L.GOOGLE.COM."},
+					{"name": "example.com.", "type": 15, "data": "1 ASPMX.L.GOOGLE.COM."}
+				]
+			}`,
+		},
+	}
+
+	traces := lookupDoHRecords(context.Background(), domain, fetcher)
+
+	mxTraces := findAllTraces(traces, entities.DnsRecordMX)
+	require.Len(t, mxTraces, 2)
+	assert.Equal(t, "ALT4.ASPMX.L.GOOGLE.COM.", mxTraces[0].Value)
+	assert.Equal(t, "ASPMX.L.GOOGLE.COM.", mxTraces[1].Value)
+}
+
+func TestLookupDoHRecords_TXT(t *testing.T) {
+	domain := "example.com"
+	fetcher := &fakeDoHFetcher{
+		responses: map[string]string{
+			txtURL(domain): `{
+				"Status": 0,
+				"Answer": [
+					{"name": "example.com.", "type": 16, "data": "v=spf1 include:_spf.google.com ~all"},
+					{"name": "example.com.", "type": 16, "data": "google-site-verification=abc123"}
+				]
+			}`,
+		},
+	}
+
+	traces := lookupDoHRecords(context.Background(), domain, fetcher)
+
+	txtTraces := findAllTraces(traces, entities.DnsRecordTXT)
+	require.Len(t, txtTraces, 2)
+	assert.Equal(t, "v=spf1 include:_spf.google.com ~all", txtTraces[0].Value)
+	assert.Equal(t, "google-site-verification=abc123", txtTraces[1].Value)
+}
+
+func TestLookupDoHRecords_NS(t *testing.T) {
+	domain := "example.com"
+	fetcher := &fakeDoHFetcher{
+		responses: map[string]string{
+			nsURL(domain): `{
+				"Status": 0,
+				"Answer": [
+					{"name": "example.com.", "type": 2, "data": "ns1.example.com."},
+					{"name": "example.com.", "type": 2, "data": "ns2.example.com."}
+				]
+			}`,
+		},
+	}
+
+	traces := lookupDoHRecords(context.Background(), domain, fetcher)
+
+	nsTraces := findAllTraces(traces, entities.DnsRecordNS)
+	require.Len(t, nsTraces, 2)
+	assert.Equal(t, "ns1.example.com.", nsTraces[0].Value)
+	assert.Equal(t, "ns2.example.com.", nsTraces[1].Value)
+}
+
+func TestLookupDoHRecords_CNAME_External(t *testing.T) {
+	domain := "shop.example.com"
+	fetcher := &fakeDoHFetcher{
+		responses: map[string]string{
+			cnameURL(domain): `{
+				"Status": 0,
+				"Answer": [{"name": "shop.example.com.", "type": 5, "data": "shops.myshopify.com."}]
+			}`,
+		},
+	}
+
+	traces := lookupDoHRecords(context.Background(), domain, fetcher)
+
+	cnameTraces := findAllTraces(traces, entities.DnsRecordCNAME)
+	require.Len(t, cnameTraces, 1)
+	assert.Equal(t, "shops.myshopify.com.", cnameTraces[0].Value)
+}
+
+func TestLookupDoHRecords_CNAME_SelfReferentialIsSuppressed(t *testing.T) {
+	domain := "example.com"
+	fetcher := &fakeDoHFetcher{
+		responses: map[string]string{
+			cnameURL(domain): `{
+				"Status": 0,
+				"Answer": [{"name": "example.com.", "type": 5, "data": "example.com."}]
+			}`,
+		},
+	}
+
+	traces := lookupDoHRecords(context.Background(), domain, fetcher)
+
+	assert.Empty(t, findAllTraces(traces, entities.DnsRecordCNAME))
+}
+
+func TestLookupDoHRecords_CNAME_NoRecordIsEmpty(t *testing.T) {
+	domain := "example.com"
+	fetcher := &fakeDoHFetcher{
+		responses: map[string]string{
+			cnameURL(domain): `{"Status": 0}`,
+		},
+	}
+
+	traces := lookupDoHRecords(context.Background(), domain, fetcher)
+
+	assert.Empty(t, findAllTraces(traces, entities.DnsRecordCNAME))
+}
+
+// TestLookupDoHRecords_OneTypeFailingDoesNotSuppressOthers is a regression
+// test: each record type is an independent DoH request, so one failing
+// (e.g. a transient error on the MX query) must not block the others.
+func TestLookupDoHRecords_OneTypeFailingDoesNotSuppressOthers(t *testing.T) {
+	domain := "example.com"
+	fetcher := &fakeDoHFetcher{
+		responses: map[string]string{
+			nsURL(domain): `{
+				"Status": 0,
+				"Answer": [{"name": "example.com.", "type": 2, "data": "ns1.example.com."}]
+			}`,
+		},
+		errURLs: map[string]bool{
+			mxURL(domain): true,
+		},
+	}
+
+	traces := lookupDoHRecords(context.Background(), domain, fetcher)
+
+	assert.NotEmpty(t, findAllTraces(traces, entities.DnsRecordNS))
+	assert.Empty(t, findAllTraces(traces, entities.DnsRecordMX))
+}
+
+func findAllTraces(traces []entities.Trace, typ entities.TraceType) []entities.Trace {
+	var out []entities.Trace
+	for _, tr := range traces {
+		if tr.Type == typ {
+			out = append(out, tr)
+		}
+	}
+	return out
+}
+
 func TestDecodeSOARnameEmail(t *testing.T) {
 	tests := []struct {
-		name    string
-		rname   string
-		want    string
-		wantOK  bool
+		name   string
+		rname  string
+		want   string
+		wantOK bool
 	}{
 		{
 			name:   "plain RNAME",

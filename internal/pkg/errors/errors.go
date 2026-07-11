@@ -2,18 +2,14 @@ package errors
 
 import (
 	"fmt"
-	"strings"
 )
 
 // ErrorType represents the type of error
 type ErrorType string
 
 const (
-	ErrorTypeValidation    ErrorType = "validation"
-	ErrorTypeNetwork       ErrorType = "network"
-	ErrorTypePlugin        ErrorType = "plugin"
-	ErrorTypeConfiguration ErrorType = "configuration"
-	ErrorTypeInternal      ErrorType = "internal"
+	ErrorTypeNetwork ErrorType = "network"
+	ErrorTypePlugin  ErrorType = "plugin"
 )
 
 // DeeperError represents a structured error in the application
@@ -46,15 +42,6 @@ func (e *DeeperError) WithContext(key string, value interface{}) *DeeperError {
 	return e
 }
 
-// NewValidationError creates a new validation error
-func NewValidationError(message string, cause error) *DeeperError {
-	return &DeeperError{
-		Type:    ErrorTypeValidation,
-		Message: message,
-		Cause:   cause,
-	}
-}
-
 // NewNetworkError creates a new network error
 func NewNetworkError(message string, cause error) *DeeperError {
 	return &DeeperError{
@@ -71,46 +58,4 @@ func NewPluginError(message string, cause error) *DeeperError {
 		Message: message,
 		Cause:   cause,
 	}
-}
-
-// NewConfigurationError creates a new configuration error
-func NewConfigurationError(message string, cause error) *DeeperError {
-	return &DeeperError{
-		Type:    ErrorTypeConfiguration,
-		Message: message,
-		Cause:   cause,
-	}
-}
-
-// NewInternalError creates a new internal error
-func NewInternalError(message string, cause error) *DeeperError {
-	return &DeeperError{
-		Type:    ErrorTypeInternal,
-		Message: message,
-		Cause:   cause,
-	}
-}
-
-// IsValidationError checks if an error is a validation error
-func IsValidationError(err error) bool {
-	if err != nil && err.Error() != "" {
-		return strings.Contains(err.Error(), string(ErrorTypeValidation))
-	}
-	return false
-}
-
-// IsNetworkError checks if an error is a network error
-func IsNetworkError(err error) bool {
-	if err != nil && err.Error() != "" {
-		return strings.Contains(err.Error(), string(ErrorTypeNetwork))
-	}
-	return false
-}
-
-// IsPluginError checks if an error is a plugin error
-func IsPluginError(err error) bool {
-	if err != nil && err.Error() != "" {
-		return strings.Contains(err.Error(), string(ErrorTypePlugin))
-	}
-	return false
 }
