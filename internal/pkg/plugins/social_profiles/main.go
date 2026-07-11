@@ -106,12 +106,23 @@ func (e SherlockEntry) CheckUrl(username string) bool {
 	return true
 }
 
+// maxConcurrentChecks bounds how many sherlock site checks run in parallel
+// per FollowTrace call. Sherlock's data.json has ~480 entries; firing one
+// unbounded goroutine per entry starved the shared worker pool (each of up
+// to MaxConcurrency simultaneous Username traces fanned out independently)
+// and could open ~2000 concurrent outbound connections for a handful of
+// usernames.
+const maxConcurrentChecks = 30
+
 type SocialProfilesPlugin struct {
 	entries map[string]SherlockEntry
+	checkFn func(entry SherlockEntry, username string) bool
 }
 
 func NewSocialProfilesPlugin() *SocialProfilesPlugin {
-	return &SocialProfilesPlugin{}
+	return &SocialProfilesPlugin{
+		checkFn: func(entry SherlockEntry, username string) bool { return entry.CheckUrl(username) },
+	}
 }
 
 // parseSherlockData decodes sherlock's data.json, skipping top-level keys
@@ -171,21 +182,28 @@ func (g *SocialProfilesPlugin) FollowTrace(trace entities.Trace) ([]entities.Tra
 		return nil, nil
 	}
 
-	var newTraces []entities.Trace
-
-	var wg sync.WaitGroup
+	var (
+		mu        sync.Mutex
+		newTraces []entities.Trace
+		wg        sync.WaitGroup
+		sem       = make(chan struct{}, maxConcurrentChecks)
+	)
 
 	for _, entry := range g.entries {
 		wg.Add(1)
+		sem <- struct{}{}
 
 		go func(entry SherlockEntry) {
 			defer wg.Done()
+			defer func() { <-sem }()
 
-			if entry.CheckUrl(trace.Value) {
+			if g.checkFn(entry, trace.Value) {
+				mu.Lock()
 				newTraces = append(newTraces, entities.Trace{
 					Value: entry.BuildUrl(trace.Value),
 					Type:  entities.SocialGeneric,
 				})
+				mu.Unlock()
 			}
 		}(entry)
 

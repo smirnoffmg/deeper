@@ -77,7 +77,13 @@ func DefaultConfig() *Config {
 		MaxRetries:         3,
 		RetryDelay:         1 * time.Second,
 		WorkerPoolConfig: WorkerPoolConfig{
-			MaxWorkers:          20,
+			// 6 plugins register on entities.Username; a batch of MaxConcurrency
+			// traces that are all usernames can submit up to 10*6=60 tasks at
+			// once. Undersized pools serialize this into slow queueing (not a
+			// deadlock, since Worker.processTask always replies once dequeued),
+			// but sized generously here to give the worst-case batch full
+			// parallelism.
+			MaxWorkers:          60,
 			QueueSize:           1000,
 			DefaultRateLimit:    10.0,
 			DefaultBurst:        5,

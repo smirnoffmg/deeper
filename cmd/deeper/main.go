@@ -18,6 +18,7 @@ import (
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/github_keys"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/github_profile"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/gravatar"
+	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/habr_profile"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/ip_intel"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/social_profiles"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/subdomains"
