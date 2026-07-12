@@ -3,13 +3,25 @@ package workerpool
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/smirnoffmg/deeper/internal/app/deeper/processor/tasks"
+	"github.com/smirnoffmg/deeper/internal/pkg/database"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func newTestDBCache(t *testing.T) *database.Cache {
+	t.Helper()
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	db, err := database.NewDatabase(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	return database.NewCache(database.NewRepository(db))
+}
 
 func TestNewDeduplicationCache(t *testing.T) {
 	config := &DeduplicationConfig{
@@ -325,6 +337,68 @@ func TestDeduplicationCache_ErrorHandling(t *testing.T) {
 	isDuplicate, err := dc.IsDuplicate(ctx, task)
 	assert.NoError(t, err) // Should work with memory-only cache
 	assert.False(t, isDuplicate)
+}
+
+// TestDeduplicationCache_FailedTaskNotPersisted is a regression test: the
+// persistent cache used to be written from IsDuplicate itself, at
+// submission time, before the plugin ever ran -- so a task that failed
+// (e.g. a GitHub 403) was cached identically to a real success, silently
+// suppressing every retry for the rest of the TTL. Confirmed live: 487
+// stale entries in ~/.deeper/deeper.db, including failed GitHub lookups,
+// blocking a legitimate same-day retry. Now the persistent cache is only
+// written by MarkProcessed, which callers must invoke after success.
+func TestDeduplicationCache_FailedTaskNotPersisted(t *testing.T) {
+	dbCache := newTestDBCache(t)
+	config := &DeduplicationConfig{
+		EnableCache:     true,
+		CacheTTL:        1 * time.Hour,
+		MaxMemorySize:   10,
+		EnableMetrics:   true,
+		CleanupInterval: 0,
+		PersistentCache: true,
+	}
+	ctx := context.Background()
+
+	dc1 := NewDeduplicationCache(config, dbCache)
+	task := &Task{Payload: "alsmirn:GitHubProfilePlugin"}
+	isDuplicate, err := dc1.IsDuplicate(ctx, task)
+	require.NoError(t, err)
+	assert.False(t, isDuplicate)
+	// task fails downstream -- MarkProcessed deliberately not called
+
+	// A fresh cache instance simulates a later CLI invocation reading the
+	// same persistent store; it must not treat the failed task as done.
+	dc2 := NewDeduplicationCache(config, dbCache)
+	isDuplicate, err = dc2.IsDuplicate(ctx, task)
+	require.NoError(t, err)
+	assert.False(t, isDuplicate)
+}
+
+func TestDeduplicationCache_MarkProcessed_PersistsAcrossInstances(t *testing.T) {
+	dbCache := newTestDBCache(t)
+	config := &DeduplicationConfig{
+		EnableCache:     true,
+		CacheTTL:        1 * time.Hour,
+		MaxMemorySize:   10,
+		EnableMetrics:   true,
+		CleanupInterval: 0,
+		PersistentCache: true,
+	}
+	ctx := context.Background()
+
+	dc1 := NewDeduplicationCache(config, dbCache)
+	task := &Task{Payload: "alsmirn:GitHubProfilePlugin"}
+	isDuplicate, err := dc1.IsDuplicate(ctx, task)
+	require.NoError(t, err)
+	assert.False(t, isDuplicate)
+
+	dc1.MarkProcessed(ctx, task)
+
+	require.Eventually(t, func() bool {
+		dc2 := NewDeduplicationCache(config, dbCache)
+		isDuplicate, err := dc2.IsDuplicate(ctx, task)
+		return err == nil && isDuplicate
+	}, time.Second, 10*time.Millisecond, "successful task was never persisted")
 }
 
 func TestLRUCache_Clear(t *testing.T) {

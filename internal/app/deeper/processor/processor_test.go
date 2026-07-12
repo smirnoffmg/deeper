@@ -99,6 +99,110 @@ func TestProcessor_ProcessTrace_Concurrency(t *testing.T) {
 	assert.GreaterOrEqual(t, elapsed, parallelTime-time.Millisecond*20, "expected at least parallel lower bound")
 }
 
+const matcherTraceType entities.TraceType = "test_matcher"
+
+// matcherPlugin implements plugins.TraceMatcher so ProcessTrace can be
+// tested against plugins that pre-declare whether they'd act on a trace.
+type matcherPlugin struct {
+	name    string
+	matches bool
+	called  bool
+}
+
+func (p *matcherPlugin) Register() error {
+	state.RegisterPlugin(matcherTraceType, p)
+	return nil
+}
+
+func (p *matcherPlugin) Matches(trace entities.Trace) bool {
+	return p.matches
+}
+
+func (p *matcherPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
+	p.called = true
+	return []entities.Trace{{Value: p.name, Type: trace.Type}}, nil
+}
+
+func (p *matcherPlugin) String() string {
+	return p.name
+}
+
+// plainMatcherTestPlugin implements plugins.DeeperPlugin only (no
+// TraceMatcher), proving plugins without the opt-in are unaffected and
+// still always submitted.
+type plainMatcherTestPlugin struct {
+	name string
+}
+
+func (p *plainMatcherTestPlugin) Register() error {
+	state.RegisterPlugin(matcherTraceType, p)
+	return nil
+}
+
+func (p *plainMatcherTestPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
+	return []entities.Trace{{Value: p.name, Type: trace.Type}}, nil
+}
+
+func (p *plainMatcherTestPlugin) String() string {
+	return p.name
+}
+
+// TestProcessor_ProcessTrace_SkipsNonMatchingPlugins is a regression test:
+// registering 7 platform-specific plugins under the single broad
+// entities.SocialGeneric type meant every trace fanned out to all 7, each
+// paying a domain rate-limit wait in Submit() even though 6/7 would
+// immediately no-op in FollowTrace. Plugins implementing TraceMatcher let
+// ProcessTrace skip submission -- and that wasted rate-limit wait --
+// entirely for traces they'd never act on.
+func TestProcessor_ProcessTrace_SkipsNonMatchingPlugins(t *testing.T) {
+	original := state.ActivePlugins[matcherTraceType]
+	t.Cleanup(func() {
+		if original == nil {
+			delete(state.ActivePlugins, matcherTraceType)
+			return
+		}
+		state.ActivePlugins[matcherTraceType] = original
+	})
+
+	nonMatching := &matcherPlugin{name: "non-matching", matches: false}
+	matching := &matcherPlugin{name: "matching", matches: true}
+	unfiltered := &plainMatcherTestPlugin{name: "unfiltered"}
+
+	state.ActivePlugins[matcherTraceType] = nil
+	require.NoError(t, nonMatching.Register())
+	require.NoError(t, matching.Register())
+	require.NoError(t, unfiltered.Register())
+
+	cfg := config.DefaultConfig()
+	cfg.WorkerPoolConfig.EnableDeduplication = false
+
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+	db, err := database.NewDatabase(dbPath)
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	repo := database.NewRepository(db)
+	cache := database.NewCache(repo)
+	proc := NewProcessor(cfg, metrics.GetGlobalMetrics(), repo, cache)
+	defer func() { _ = proc.Shutdown(5 * time.Second) }()
+
+	trace := entities.Trace{Value: "target", Type: matcherTraceType}
+	results, err := proc.ProcessTrace(context.Background(), trace)
+	require.NoError(t, err)
+
+	assert.False(t, nonMatching.called, "non-matching plugin's FollowTrace must never be invoked")
+	assert.True(t, matching.called)
+
+	names := map[string]bool{}
+	for _, d := range results {
+		names[d.PluginName] = true
+	}
+	assert.Contains(t, names, "matching")
+	assert.Contains(t, names, "unfiltered")
+	assert.NotContains(t, names, "non-matching")
+}
+
 const echoTraceType entities.TraceType = "test_echo_attribution"
 
 // echoPlugin returns a child trace that encodes exactly which parent trace it

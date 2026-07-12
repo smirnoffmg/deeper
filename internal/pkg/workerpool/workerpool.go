@@ -171,6 +171,14 @@ func (wp *WorkerPool) Submit(ctx context.Context, task *Task) error {
 		} else if isDuplicate {
 			log.Debug().Str("taskID", task.ID).Msg("Task deduplicated")
 			atomic.AddInt64(&wp.metrics.DeduplicationHits, 1)
+			// A deduplicated task never reaches a worker, so it never gets a
+			// reply from processTask. Callers that wait for exactly one reply
+			// per submitted task (e.g. Processor.ProcessTrace) would otherwise
+			// block forever -- the same class of hang as worker starvation,
+			// just triggered by a dedup hit instead.
+			if task.ReplyTo != nil {
+				task.ReplyTo <- &TaskResult{TaskID: task.ID}
+			}
 			return nil
 		}
 	}
@@ -296,10 +304,12 @@ func (wp *WorkerPool) getCircuitBreaker(key string) *CircuitBreaker {
 }
 
 // recordTaskResult records task processing results
-func (wp *WorkerPool) recordTaskResult(result *TaskResult) {
+func (wp *WorkerPool) recordTaskResult(task *Task, result *TaskResult) {
 	atomic.AddInt64(&wp.processedTasks, 1)
 	if result.Error != nil {
 		atomic.AddInt64(&wp.failedTasks, 1)
+	} else if wp.config.EnableDeduplication && wp.deduplicationCache != nil {
+		wp.deduplicationCache.MarkProcessed(wp.ctx, task)
 	}
 
 	// Update circuit breaker
@@ -360,7 +370,7 @@ func (w *Worker) processTask(task *Task) {
 	}
 
 	// Record the result
-	w.pool.recordTaskResult(taskResult)
+	w.pool.recordTaskResult(task, taskResult)
 
 	if task.ReplyTo != nil {
 		// Unconditional send, not gated on ctx: callers size ReplyTo's buffer to

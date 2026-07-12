@@ -7,9 +7,12 @@ import (
 
 	// Import plugins to register them
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/academic_papers"
+	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/bluesky_profile"
+	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/codeforces_profile"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/coderepos"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/companyregistry"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/contact_crawler"
+	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/crowdin_profile"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/crtsh"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/dns_records"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/dns_resolver"
@@ -20,8 +23,12 @@ import (
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/gravatar"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/habr_profile"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/ip_intel"
+	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/keybase_profile"
+	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/launchpad_profile"
+	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/linuxorgru_profile"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/social_profiles"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/subdomains"
+	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/telegram_profile"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/url_resolver"
 	_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/whois"
 )

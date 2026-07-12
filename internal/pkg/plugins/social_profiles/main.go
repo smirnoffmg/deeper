@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/rs/zerolog/log"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
@@ -28,6 +27,7 @@ type SherlockEntry struct {
 	UrlProbe  string   `json:"urlProbe"`
 	ErrorMsg  []string `json:"errorMsg,omitempty"`
 	ErrorType string   `json:"errorType"`
+	ErrorCode *int     `json:"errorCode,omitempty"`
 }
 
 func (e SherlockEntry) BuildUrl(username string) string {
@@ -60,50 +60,6 @@ func (e *SherlockEntry) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
-}
-
-func (e SherlockEntry) CheckUrl(username string) bool {
-	url := e.BuildUrl(username)
-
-	// we need to make a request in a context with a timeout
-
-	client := http.Client{
-		Timeout: 5 * time.Second,
-	}
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return false
-	}
-
-	req.Header.Set("Referer", e.UrlMain)
-	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/116.0")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return false
-	}
-
-	if resp.StatusCode != 200 {
-		return false
-	}
-
-	// check body for error message
-
-	body, err := io.ReadAll(resp.Body)
-
-	if err != nil {
-		return false
-	}
-
-	defer func() { _ = resp.Body.Close() }()
-
-	for _, msg := range e.ErrorMsg {
-		if strings.Contains(string(body), msg) {
-			return false
-		}
-	}
-	return true
 }
 
 // maxConcurrentChecks bounds how many sherlock site checks run in parallel

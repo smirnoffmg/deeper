@@ -97,7 +97,11 @@ func NewLRUCache(maxSize int) *LRUCache {
 	}
 }
 
-// IsDuplicate checks if a task is a duplicate using both memory and persistent cache
+// IsDuplicate checks if a task is a duplicate using both memory and persistent
+// cache. A miss marks the task in the (fast, per-process) memory cache
+// immediately, so concurrent submissions of the identical task within one run
+// collapse into one. It does NOT write to the persistent cache -- see
+// MarkProcessed for that.
 func (dc *DeduplicationCache) IsDuplicate(ctx context.Context, task *Task) (bool, error) {
 	taskID := dc.generateTaskID(task)
 
@@ -130,16 +134,31 @@ func (dc *DeduplicationCache) IsDuplicate(ctx context.Context, task *Task) (bool
 		dc.memoryCache.Put(taskID, task)
 	}
 
-	// Store in persistent cache if enabled
-	if dc.config.PersistentCache && dc.dbCache != nil {
-		go func() {
-			if err := dc.storeInPersistentCache(ctx, task, taskID); err != nil {
-				log.Warn().Err(err).Str("taskID", taskID).Msg("Failed to store in persistent cache")
-			}
-		}()
+	return false, nil
+}
+
+// MarkProcessed records a task as successfully completed in the persistent
+// cache, so a future run's IsDuplicate check for the same (trace, plugin)
+// pair short-circuits instead of repeating work.
+//
+// Callers must only call this after a task completes without error. The
+// previous design wrote to the persistent cache from IsDuplicate itself, at
+// submission time -- before the plugin even ran -- so a rate-limited or
+// failed call was cached identically to a real success, silently
+// suppressing every retry of that (trace, plugin) pair for the rest of the
+// cache's TTL (confirmed live: a GitHub 403 blocked all retries of that
+// plugin/trace for 24h even after the rate limit reset).
+func (dc *DeduplicationCache) MarkProcessed(ctx context.Context, task *Task) {
+	if !dc.config.PersistentCache || dc.dbCache == nil {
+		return
 	}
 
-	return false, nil
+	taskID := dc.generateTaskID(task)
+	go func() {
+		if err := dc.storeInPersistentCache(ctx, task, taskID); err != nil {
+			log.Warn().Err(err).Str("taskID", taskID).Msg("Failed to store in persistent cache")
+		}
+	}()
 }
 
 // generateTaskID generates a content-addressable hash for the task.
@@ -181,13 +200,18 @@ func (dc *DeduplicationCache) checkPersistentCache(ctx context.Context, task *Ta
 		Type:  entities.TraceType("deduplication"),
 	}
 
-	// Check if we have cached results for this task
+	// Check if we have cached results for this task. The marker stored by
+	// storeInPersistentCache is always an empty slice -- len(results) > 0
+	// would be false for both a real hit and a true miss, since
+	// database.Cache.Get only returns nil on miss (json.Unmarshal turns a
+	// stored "[]" into a non-nil, zero-length slice). Checking non-nil
+	// distinguishes the two; len() cannot.
 	results, err := dc.dbCache.Get(trace, "deduplication")
 	if err != nil {
 		return false, fmt.Errorf("failed to get from persistent cache: %w", err)
 	}
 
-	return len(results) > 0, nil
+	return results != nil, nil
 }
 
 // storeInPersistentCache stores task in persistent cache

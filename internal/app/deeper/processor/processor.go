@@ -12,6 +12,7 @@ import (
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 	"github.com/smirnoffmg/deeper/internal/pkg/errors"
 	"github.com/smirnoffmg/deeper/internal/pkg/metrics"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 	"github.com/smirnoffmg/deeper/internal/pkg/state"
 	"github.com/smirnoffmg/deeper/internal/pkg/workerpool"
 	"golang.org/x/time/rate"
@@ -75,8 +76,8 @@ func NewProcessor(cfg *config.Config, metricsCollector *metrics.MetricsCollector
 func (p *Processor) ProcessTrace(ctx context.Context, trace entities.Trace) ([]entities.Discovery, error) {
 	startTime := time.Now()
 
-	plugins, exists := state.ActivePlugins[trace.Type]
-	if !exists || len(plugins) == 0 {
+	candidatePlugins, exists := state.ActivePlugins[trace.Type]
+	if !exists || len(candidatePlugins) == 0 {
 		log.Debug().Msgf("No plugins found for trace type %s", trace.Type)
 		// Record metrics for skipped trace
 		p.metrics.RecordTraceTypeMetrics(trace.Type, false, 0, time.Since(startTime))
@@ -91,11 +92,11 @@ func (p *Processor) ProcessTrace(ctx context.Context, trace entities.Trace) ([]e
 	// no per-caller correlation, so concurrent ProcessTrace calls (as driven by
 	// engine.processBatch's goroutine fan-out) would otherwise consume results
 	// meant for each other's traces.
-	replyTo := make(chan *workerpool.TaskResult, len(plugins))
+	replyTo := make(chan *workerpool.TaskResult, len(candidatePlugins))
 
 	// Submit tasks to worker pool
 	submittedTasks := 0
-	for _, plugin := range plugins {
+	for _, plugin := range candidatePlugins {
 		pluginInterface, ok := plugin.(interface {
 			FollowTrace(trace entities.Trace) ([]entities.Trace, error)
 			String() string
@@ -103,6 +104,14 @@ func (p *Processor) ProcessTrace(ctx context.Context, trace entities.Trace) ([]e
 		if !ok {
 			log.Error().Msgf("Plugin does not implement required interface")
 			allErrors = append(allErrors, errors.NewPluginError("invalid plugin interface", nil))
+			continue
+		}
+
+		// Plugins that opt into TraceMatcher get to skip submission -- and
+		// the domain rate-limit wait bundled into Submit() -- entirely for
+		// traces they'd immediately no-op on. Plugins that don't implement
+		// it are always submitted, unchanged from before.
+		if matcher, ok := plugin.(plugins.TraceMatcher); ok && !matcher.Matches(trace) {
 			continue
 		}
 

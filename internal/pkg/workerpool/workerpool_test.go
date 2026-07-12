@@ -128,6 +128,54 @@ func TestWorkerPool_Deduplication(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 }
 
+// TestWorkerPool_Deduplication_RepliesInsteadOfHanging is a regression test:
+// Submit() used to return nil for a deduplicated task without ever sending
+// to task.ReplyTo, since the task never reaches a worker. A caller that
+// waits for exactly one reply per submitted task (e.g. Processor.ProcessTrace)
+// would then block forever on that reply -- the same class of hang as the
+// worker-starvation bug, but triggered by dedup hits instead of pool
+// oversubscription.
+func TestWorkerPool_Deduplication_RepliesInsteadOfHanging(t *testing.T) {
+	config := &Config{
+		MaxWorkers:          2,
+		QueueSize:           10,
+		DefaultRateLimit:    rate.Limit(100),
+		DefaultBurst:        10,
+		TaskTimeout:         1 * time.Second,
+		EnableDeduplication: true,
+		DeduplicationConfig: DeduplicationConfig{
+			EnableCache:     true,
+			CacheTTL:        1 * time.Hour,
+			MaxMemorySize:   100,
+			EnableMetrics:   true,
+			CleanupInterval: 0,
+			PersistentCache: false,
+		},
+	}
+
+	wp := NewWorkerPool(config)
+	dedupCache := NewDeduplicationCache(&config.DeduplicationConfig, nil)
+	wp.SetDeduplicationCache(dedupCache)
+	defer func() { _ = wp.Shutdown(5 * time.Second) }()
+
+	ctx := context.Background()
+	replyTo := make(chan *TaskResult, 2)
+
+	task1 := &Task{ID: "dup-task", Payload: "same-payload", ReplyTo: replyTo}
+	task2 := &Task{ID: "dup-task", Payload: "same-payload", ReplyTo: replyTo}
+
+	require.NoError(t, wp.Submit(ctx, task1))
+	require.NoError(t, wp.Submit(ctx, task2))
+
+	for i := 0; i < 2; i++ {
+		select {
+		case <-replyTo:
+		case <-time.After(2 * time.Second):
+			t.Fatal("deduplicated task's ReplyTo never received a result — a waiting caller would hang forever")
+		}
+	}
+}
+
 func TestWorkerPool_RateLimiting(t *testing.T) {
 	config := &Config{
 		MaxWorkers:       2,
