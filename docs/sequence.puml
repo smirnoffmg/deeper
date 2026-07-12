@@ -1,25 +1,44 @@
 @startuml Sequence
 actor User
 
-participant "Deeper" as Deeper
-participant "State" as State
-participant "Trace" as Trace
-participant "Plugin: SubdomainPlugin" as SubdomainPlugin
-participant "Plugin: WhoisPlugin" as WhoisPlugin
+participant "CLI" as CLI
+participant "Engine" as Engine
+participant "Processor" as Processor
+participant "PluginRegistry\n(state.ActivePlugins)" as Registry
+participant "WorkerPool" as Pool
+participant "Plugin\n(e.g. WhoisPlugin)" as Plugin
+participant "External Service" as Ext
+participant "Database" as DB
 
-User -> Deeper: Create Trace (example.com)
-Deeper -> Trace: NewTrace("example.com")
+User -> CLI: deeper scan example.com
+CLI -> Engine: ProcessInput(Trace{Value: "example.com", Type: Domain})
+Engine -> Engine: push seed onto stack, mark seen
 
-User -> Deeper: Start Processing
-Deeper -> State: Get Plugins for TraceType (Domain)
-State -> Deeper: Return [SubdomainPlugin, WhoisPlugin]
+loop until stack empty or scan timeout
+    Engine -> Processor: ProcessTrace(trace) for each trace in batch\n(bounded by MaxConcurrency)
+    Processor -> Registry: lookup plugins for trace.Type
+    Registry --> Processor: e.g. [WhoisPlugin, SubdomainPlugin, ...]
 
-Deeper -> SubdomainPlugin: FollowTrace(Trace)
-SubdomainPlugin -> Deeper: Return [Subdomain Trace(s)]
+    loop for each candidate plugin
+        alt plugin implements TraceMatcher and Matches() == false
+            Processor -> Processor: skip -- no task submitted,\nno rate-limit wait paid
+        else
+            Processor -> Pool: Submit(task)
+            Pool -> Pool: dedup check, domain rate-limit wait,\ncircuit breaker check
+            Pool -> Plugin: FollowTrace(trace)
+            Plugin -> Ext: HTTP request (via shared client)
+            Ext --> Plugin: response
+            Plugin --> Pool: new Trace(s)
+            Pool --> Processor: TaskResult (per-call reply channel)
+        end
+    end
 
-Deeper -> WhoisPlugin: FollowTrace(Trace)
-WhoisPlugin -> Deeper: Return [Whois Trace]
+    Processor --> Engine: []Discovery{Parent, PluginName, Child}
+    Engine -> DB: persist new trace + edge
+    Engine -> Engine: push newly-discovered,\nnot-yet-seen traces onto stack
+end
 
-Deeper -> User: Display New Traces
+Engine --> CLI: final trace graph
+CLI -> User: display results table
 
 @enduml

@@ -1,10 +1,25 @@
 @startuml Component
+
 package "Deeper" {
-    [Core] --> [Plugin Interface]
-    [Plugin Interface] <|-- [SubdomainPlugin]
-    [Plugin Interface] <|-- [WhoisPlugin]
-    [Core] --> [State Management]
-    [State Management] --> [Database]
-    [Core] --> [External API Handler]
+    [CLI (cobra)] --> [Engine]
+    [CLI (cobra)] --> [Display]
+
+    [Engine] --> [Processor]
+    [Engine] --> [Database (SQLite)] : persist trace graph
+
+    [Processor] --> [Plugin Registry]
+    [Processor] --> [Worker Pool]
+
+    [Worker Pool] --> [Domain Rate Limiter]
+    [Worker Pool] --> [Deduplication Cache]
+    [Worker Pool] --> [Circuit Breaker]
+    [Worker Pool] --> [Plugins]
+
+    [Deduplication Cache] --> [Database (SQLite)] : cross-run markers
+
+    [Plugins] ..> [Plugin Registry] : self-register via init()
+    [Plugins] --> [Shared HTTP Client]
+    [Shared HTTP Client] --> [External Services]
 }
+
 @enduml

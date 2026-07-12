@@ -1,15 +1,20 @@
 @startuml Usecase
-actor User
-actor ExternalService
+left to right direction
 
-User -> (Create Trace)
-User -> (Start Processing)
-User -> (View Results)
+actor Operator
+actor "External Service" as Ext
 
-ExternalService -> (Fetch Data)
+rectangle Deeper {
+    Operator -- (Run Scan)
+    Operator -- (List Plugins)
+    Operator -- (Check Health)
+    Operator -- (View Metrics)
+    Operator -- (Query Trace Database)
+    Operator -- (Configure Domain Rate Limits)
+    Operator -- (Run Benchmark)
 
-(User) -- (Create Trace)
-(User) -- (Start Processing)
-(User) -- (View Results)
-(ExternalService) -- (Fetch Data)
+    (Run Scan) .> (Configure Domain Rate Limits) : includes
+    (Run Scan) --> Ext : queries via plugins
+}
+
 @enduml

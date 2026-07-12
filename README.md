@@ -1,305 +1,46 @@
 # Deeper
 
-```text
-██████  ███████ ███████ ██████  ███████ ██████
-██   ██ ██      ██      ██   ██ ██      ██   ██
-██   ██ █████   █████   ██████  █████   ██████
-██   ██ ██      ██      ██      ██      ██   ██
-██████  ███████ ███████ ██      ███████ ██   ██
-```
+Deeper starts from one thing you already know — an email, a username, a domain, a company name — and grows it into a graph of everything that's provably connected to it.
 
-Deeper is an OSINT (Open Source Intelligence) tool designed to help users gather information from various online sources. The tool operates based on the concept of "traces." Each trace represents a piece of information such as an email, phone number, domain, or username. The tool leverages plugins to follow these traces, discovering new traces along the way. Each plugin specializes in processing a specific type of trace and produces new traces based on the input. This modular approach allows for easy extension and customization of the tool to suit various OSINT needs.
+## How it thinks
 
-## 🚀 Features
+Everything Deeper knows is a **trace** — a single fact, typed and dated: an email address, a domain, an IP, a GitHub handle, a company name, a cryptographic key. Deeper never stores an opinion, only facts it can point back to a source for.
 
-- **Modular Plugin Architecture**: Easy to extend with new plugins
-- **Concurrent Processing**: Efficient parallel trace processing
-- **Comprehensive Error Handling**: Structured error types and logging
-- **Configuration Management**: Environment-based configuration
-- **Test Coverage**: Comprehensive unit tests
-- **Rate Limiting**: Built-in HTTP rate limiting and retry logic
-- **Structured Logging**: JSON-based logging with configurable levels
+Each trace gets handed to every plugin that knows how to do something useful with that *kind* of fact. A domain trace goes to the plugins that know how to look up WHOIS records, enumerate subdomains, or check certificate transparency logs. A username trace goes to the plugins that check code-hosting platforms, developer communities, and social networks. Whatever new facts those plugins turn up become new traces, which get handed to the plugins that know what to do with *them* — and so on, breadth-first, until the graph stops growing.
 
-## 🏗️ Architecture
+A few things this approach is deliberately strict about:
 
-The project follows SOLID principles and clean architecture patterns:
+- **Nothing is asked twice.** Every (fact, source) pair is checked once and remembered, so re-running an investigation doesn't repeat work or hammer the same site again.
+- **No source gets hit harder than it can take.** Requests to each destination are paced independently, so one noisy plugin can't drown out the rest or get the whole investigation rate-limited.
+- **A guess is not a fact.** Where a source only tells you "this account might exist" (most social-network username checks fall into this bucket), Deeper treats that as weak evidence, not a discovery. Where a source can prove a connection — a cryptographically signed proof, a commit's real author metadata, a certificate's registered domain — Deeper follows that instead of a lookalike username. The tool has been tuned more than once specifically to stop trusting "the page returned 200" as proof of anything.
 
-### Core Components
+The result is a graph, not a list: every trace has a parent it was discovered from and a reason it was kept, so you can always trace a fact backward to how Deeper found it.
 
-- **Engine**: Orchestrates the trace processing workflow
-- **Processor**: Handles concurrent trace processing through plugins
-- **Display**: Manages result presentation and formatting
-- **Config**: Centralized configuration management
-- **Errors**: Structured error handling and types
-- **HTTP**: Shared HTTP client with retry logic and rate limiting
+## What it can find
 
-### Plugin System
+Starting from almost any single identifier, Deeper can grow a picture across five areas:
 
-Plugins implement the `DeeperPlugin` interface and are automatically discovered and registered. Each plugin specializes in processing specific trace types and can generate new traces.
+- **Identity** — the real name, company, and role behind a username or email; company registry and legal-entity lookups; academic and professional publications.
+- **Verified social presence** — accounts confirmed to belong to the same person, not just accounts that share a username. This ranges from a broad existence sweep across hundreds of platforms to focused plugins for the platforms worth digging into properly, including ones that expose cryptographically verified links between accounts.
+- **Infrastructure** — the domains, subdomains, DNS records, IP ranges, and hosting footprint behind a company or website, discovered through certificate transparency, DNS enumeration, and WHOIS.
+- **Code footprint** — public repositories, commit history, and the real names and emails hiding behind commit authorship, including co-authors pulled in along the way.
+- **Contact surface** — emails surfaced from crawled pages and commit metadata, plus the SSH and PGP keys someone has published on their code-hosting profile.
 
-## 📦 Installation
-
-### Prerequisites
-
-- Go 1.26 or higher
-- Git
-
-### Build from Source
+## Getting started
 
 ```bash
-# Clone the repository
 git clone https://github.com/smirnoffmg/deeper.git
 cd deeper
-
-# Install dependencies
-make deps
-
-# Build the application
 make build
-
-# Run the application
-./build/deeper <input>
+./build/deeper scan <email | username | domain | company>
 ```
 
-### Quick Start
+Architecture and performance-tuning details live in [`docs/`](docs/) — this README is deliberately just the front door.
 
-```bash
-# Run with default input
-make run
+## Responsible use
 
-# Run with custom input
-make run-custom INPUT=your_input_here
+Deeper is built for legitimate OSINT research and authorized security testing. Make sure you have proper authorization before pointing it at any person, system, or organization you don't own.
 
-# Run in development mode with hot reload
-make dev
-```
+## License
 
-## ⚙️ Configuration
-
-Deeper uses environment variables for configuration:
-
-| Variable                 | Default      | Description                              |
-| ------------------------ | ------------ | ---------------------------------------- |
-| `DEEPER_HTTP_TIMEOUT`    | `30s`        | HTTP request timeout                     |
-| `DEEPER_MAX_CONCURRENCY` | `10`         | Maximum concurrent operations            |
-| `DEEPER_RATE_LIMIT`      | `5`          | Requests per second                      |
-| `DEEPER_LOG_LEVEL`       | `info`       | Logging level (debug, info, warn, error) |
-| `DEEPER_USER_AGENT`      | `Deeper/1.0` | User agent for HTTP requests             |
-| `DEEPER_MAX_RETRIES`     | `3`          | Maximum retry attempts                   |
-| `DEEPER_RETRY_DELAY`     | `1s`         | Delay between retries                    |
-
-Example:
-
-```bash
-export DEEPER_LOG_LEVEL=debug
-export DEEPER_MAX_CONCURRENCY=20
-./deeper username
-```
-
-## 🧪 Testing
-
-The project includes comprehensive test coverage:
-
-```bash
-# Run all tests
-make test
-
-# Run tests with coverage report
-make test-coverage
-
-# Run tests with race detector
-make test-race
-
-# Run benchmarks
-make benchmark
-```
-
-## 🔧 Development
-
-### Project Structure
-
-```text
-deeper/
-├── cmd/
-│   └── deeper/
-│       └── main.go              # Application entry point
-├── internal/
-│   ├── app/deeper/
-│   │   ├── cli/                 # Cobra CLI commands (scan, plugins, health, …)
-│   │   ├── display/             # Result presentation
-│   │   ├── engine/              # Core orchestration
-│   │   └── processor/           # Trace processing and worker pool integration
-│   └── pkg/
-│       ├── config/              # Configuration management
-│       ├── database/            # SQLite storage and caching
-│       ├── entities/            # Data models and validation
-│       ├── errors/              # Structured error handling
-│       ├── http/                # HTTP client utilities
-│       ├── metrics/             # Performance monitoring
-│       ├── plugins/             # Plugin implementations
-│       ├── state/               # Global plugin registry
-│       └── workerpool/          # Concurrent task processing
-├── configs/                     # Default configuration
-├── docs/                        # Documentation and diagrams
-├── Makefile                     # Build and development tasks
-└── README.md                    # This file
-```
-
-### Adding a New Plugin
-
-1. Create a new directory in `internal/pkg/plugins/`
-2. Implement the `DeeperPlugin` interface:
-
-```go
-package your_plugin
-
-import (
-    "github.com/smirnoffmg/deeper/internal/pkg/entities"
-    "github.com/smirnoffmg/deeper/internal/pkg/state"
-)
-
-const InputTraceType = entities.Username
-
-func init() {
-    p := NewPlugin()
-    if err := p.Register(); err != nil {
-        log.Error().Err(err).Msgf("Failed to register plugin %s", p)
-    }
-}
-
-type YourPlugin struct{}
-
-func NewPlugin() *YourPlugin {
-    return &YourPlugin{}
-}
-
-func (p *YourPlugin) Register() error {
-    state.RegisterPlugin(InputTraceType, p)
-    return nil
-}
-
-func (p *YourPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
-    if trace.Type != InputTraceType {
-        return nil, nil
-    }
-
-    // Your plugin logic here
-    var newTraces []entities.Trace
-    // ... process trace and generate new traces
-
-    return newTraces, nil
-}
-
-func (p *YourPlugin) String() string {
-    return "YourPlugin"
-}
-```
-
-3. Import the plugin in `cmd/deeper/main.go`:
-
-```go
-_ "github.com/smirnoffmg/deeper/internal/pkg/plugins/your_plugin"
-```
-
-### Development Commands
-
-```bash
-# Format code
-make fmt
-
-# Run linter
-make lint
-
-# Generate mocks for testing
-make mocks
-
-# Run security scan
-make security
-
-# Show all available commands
-make help
-```
-
-## 🔒 Security
-
-The project includes several security features:
-
-- **Input Validation**: Comprehensive validation of all inputs
-- **Rate Limiting**: Prevents abuse of external APIs
-- **Error Handling**: Secure error messages without information leakage
-- **Security Scanning**: Automated security checks with gosec
-
-## 📊 Performance
-
-- **Concurrent Processing**: Efficient parallel execution
-- **Connection Pooling**: Reusable HTTP connections
-- **Memory Management**: Proper resource cleanup
-- **Batch Processing**: Configurable batch sizes for large datasets
-
-## 🤝 Contributing
-
-We welcome contributions! Please follow these guidelines:
-
-1. **Fork the Repository**: Click the "Fork" button at the top right
-2. **Create a Feature Branch**: `git checkout -b feature/your-feature`
-3. **Follow Coding Standards**:
-   - Run `make fmt` to format code
-   - Run `make lint` to check for issues
-   - Add tests for new functionality
-4. **Commit Your Changes**: Use descriptive commit messages
-5. **Push to Your Branch**: `git push origin feature/your-feature`
-6. **Create a Pull Request**: Submit for review
-
-### Development Setup
-
-```bash
-# Install development tools
-make deps
-
-# Install pre-commit hooks (runs golangci-lint + go test on each commit)
-brew install pre-commit
-make pre-commit
-
-# Run hooks manually without committing
-make pre-commit-run
-```
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🆘 Support
-
-- **Issues**: Report bugs and feature requests on GitHub
-- **Discussions**: Join community discussions
-- **Documentation**: Check the [docs](docs/) directory for detailed documentation
-
-## 🔄 Changelog
-
-### v1.0.0 (Current)
-
-- ✅ Modular plugin architecture
-- ✅ Concurrent trace processing
-- ✅ Comprehensive error handling
-- ✅ Configuration management
-- ✅ Test coverage
-- ✅ Rate limiting and retry logic
-- ✅ Structured logging
-- ✅ Security improvements
-
-## 📈 Roadmap
-
-- [x] CLI framework with subcommands (`scan`, `plugins`, `health`, `metrics`, `database`, `rate-limit`, `benchmark`)
-- [ ] Plugin lifecycle management
-- [x] Metrics and monitoring
-- [x] Database integration for trace storage
-- [ ] Web interface
-- [ ] API server mode
-- [ ] Plugin marketplace
-- [ ] Advanced filtering and search
-- [ ] Export functionality (JSON, CSV, etc.)
-- [ ] Integration with external OSINT tools
-
----
-
-**Note**: This tool is designed for legitimate OSINT research and security testing. Please ensure you have proper authorization before using it on any systems or networks you don't own.
+MIT — see [LICENSE](LICENSE).

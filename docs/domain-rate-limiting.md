@@ -78,21 +78,9 @@ DEEPER_WORKER_POOL_BURST=5
 DEEPER_WORKER_POOL_TASK_TIMEOUT=30s
 DEEPER_WORKER_POOL_ENABLE_DEDUP=true
 DEEPER_WORKER_POOL_ENABLE_METRICS=true
-
-# Domain-Specific Rate Limiting Configuration
-# Format: DEEPER_DOMAIN_RATE_<DOMAIN>_<PARAMETER>
-DEEPER_DOMAIN_RATE_GITHUB_COM_RATE_LIMIT=5.0
-DEEPER_DOMAIN_RATE_GITHUB_COM_BURST=2
-DEEPER_DOMAIN_RATE_GITHUB_COM_BACKOFF_BASE=2s
-DEEPER_DOMAIN_RATE_GITHUB_COM_BACKOFF_MAX=120s
-DEEPER_DOMAIN_RATE_GITHUB_COM_MAX_RETRIES=3
-
-DEEPER_DOMAIN_RATE_API_GITHUB_COM_RATE_LIMIT=2.0
-DEEPER_DOMAIN_RATE_API_GITHUB_COM_BURST=1
-DEEPER_DOMAIN_RATE_API_GITHUB_COM_BACKOFF_BASE=5s
-DEEPER_DOMAIN_RATE_API_GITHUB_COM_BACKOFF_MAX=300s
-DEEPER_DOMAIN_RATE_API_GITHUB_COM_MAX_RETRIES=5
 ```
+
+There is no environment-variable format for per-domain rate limits -- `Config.DomainRateConfigs` exists but is never populated from the environment. Per-domain rate limits are configured either through the `rate-limit` CLI command (see below) or programmatically via `processor.ConfigureDomainRateLimit(...)`.
 
 ### Programmatic Configuration
 

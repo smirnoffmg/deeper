@@ -1,54 +1,109 @@
 @startuml Architecture
 
-package "Deeper" {
-
+package "entities" {
     class Trace {
         +Value: string
         +Type: TraceType
-        +String(): string
     }
 
     enum TraceType {
-        Email
-        Phone
         Domain
-        Username
         Subdomain
-        Whois
-        // Add other trace types as needed
+        Username
+        Email
+        Company
+        Github
+        Repository
+        SocialGeneric
+        ' ~60 total trace types
     }
-
-    interface DeeperPlugin {
-        +Register(): error
-        +FollowTrace(trace: Trace): Trace[]
-        +String(): string
-    }
-
-    class SubdomainPlugin {
-        +Register(): error
-        +FollowTrace(trace: Trace): Trace[]
-        +String(): string
-    }
-
-    class WhoisPlugin {
-        +Register(): error
-        +FollowTrace(trace: Trace): Trace[]
-        +String(): string
-    }
-
-    SubdomainPlugin --|> DeeperPlugin
-    WhoisPlugin --|> DeeperPlugin
 
     Trace --> "1" TraceType
-    Trace --> "1..*" DeeperPlugin
+}
 
-    class State {
-        +ActivePlugins: map<TraceType, DeeperPlugin[]>
-        +RegisterPlugin(traceType: TraceType, plugin: DeeperPlugin)
+package "plugins" {
+    interface DeeperPlugin {
+        +Register(): error
+        +FollowTrace(trace: Trace): (Trace[], error)
+        +String(): string
     }
 
-    Trace --> State
-    DeeperPlugin --> State
+    interface TraceMatcher {
+        +Matches(trace: Trace): bool
+    }
+
+    note right of TraceMatcher
+        Optional. Lets a plugin declare, before
+        any task is created, whether it would act
+        on a trace -- so Processor can skip the
+        domain rate-limit wait entirely for
+        guaranteed no-ops.
+    end note
+
+    class WhoisPlugin
+    class SubdomainPlugin
+    class GitHubIdentityPlugin
+    class KeybaseProfilePlugin
+
+    note bottom of KeybaseProfilePlugin
+        1 of 25 plugins. Registers under the
+        broad SocialGeneric type but implements
+        TraceMatcher to only act on keybase.io URLs.
+    end note
+
+    WhoisPlugin ..|> DeeperPlugin
+    SubdomainPlugin ..|> DeeperPlugin
+    GitHubIdentityPlugin ..|> DeeperPlugin
+    KeybaseProfilePlugin ..|> DeeperPlugin
+    KeybaseProfilePlugin ..|> TraceMatcher
 }
+
+package "state" {
+    class ActivePluginsRegistry {
+        +ActivePlugins: map<TraceType, DeeperPlugin[]>
+        +RegisterPlugin(traceType, plugin)
+    }
+}
+
+package "engine" {
+    class Engine {
+        -stack: Trace[]
+        -seen: set<Trace>
+        +ProcessInput(seed: Trace)
+        -processBatch(traces: Trace[])
+    }
+}
+
+package "processor" {
+    class Processor {
+        +ProcessTrace(trace: Trace): Discovery[]
+    }
+}
+
+package "workerpool" {
+    class WorkerPool {
+        +Submit(task: Task): error
+    }
+    class DomainRateLimiter
+    class DeduplicationCache
+    class CircuitBreaker
+
+    WorkerPool --> DomainRateLimiter
+    WorkerPool --> DeduplicationCache
+    WorkerPool --> CircuitBreaker
+}
+
+package "database" {
+    class Repository
+    class Cache
+}
+
+Engine --> Processor : processBatch()\n(bounded by MaxConcurrency)
+Processor --> ActivePluginsRegistry : lookup plugins for trace.Type
+Processor ..> TraceMatcher : skip submission if Matches() == false
+Processor --> WorkerPool : Submit() one task per matching plugin
+WorkerPool --> DeeperPlugin : FollowTrace()
+Engine --> Repository : persist trace graph edges
+DeduplicationCache --> Cache : cross-run dedup markers (SQLite)
 
 @enduml
