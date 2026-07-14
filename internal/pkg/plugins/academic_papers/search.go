@@ -43,6 +43,9 @@ func searchAuthorPapers(ctx context.Context, fetcher searchFetcher, name string)
 
 	var urls []string
 	for _, paper := range result.Data {
+		if paper.URL == "" {
+			continue
+		}
 		for _, author := range paper.Authors {
 			if isCloseNameMatch(name, author.Name) {
 				urls = append(urls, paper.URL)

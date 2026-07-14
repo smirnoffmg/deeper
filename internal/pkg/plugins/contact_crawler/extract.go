@@ -64,17 +64,16 @@ func looksLikePhone(value string) bool {
 }
 
 func mailtoTrace(href string) (entities.Trace, bool) {
-	if !strings.HasPrefix(strings.ToLower(href), "mailto:") {
+	addr, stripped := stripPrefixLoop(href, "mailto:")
+	if !stripped {
 		return entities.Trace{}, false
 	}
 
-	addr := strings.TrimPrefix(href, "mailto:")
-	addr = strings.TrimPrefix(addr, "MAILTO:")
 	if idx := strings.IndexAny(addr, "?&"); idx >= 0 {
 		addr = addr[:idx]
 	}
 	addr = strings.TrimSpace(addr)
-	if addr == "" {
+	if !entities.IsEmail(addr) {
 		return entities.Trace{}, false
 	}
 
@@ -82,25 +81,81 @@ func mailtoTrace(href string) (entities.Trace, bool) {
 }
 
 func telTrace(href string) (entities.Trace, bool) {
-	lower := strings.ToLower(href)
-	if !strings.HasPrefix(lower, "tel:") {
+	number, stripped := stripPrefixLoop(href, "tel:")
+	if !stripped {
 		return entities.Trace{}, false
 	}
 
-	number := strings.TrimSpace(href[4:])
 	if idx := strings.IndexAny(number, "?&"); idx >= 0 {
 		number = number[:idx]
 	}
-	if number == "" {
+	number = strings.TrimSpace(number)
+	if !looksLikeTelNumber(number) {
 		return entities.Trace{}, false
 	}
 
 	return entities.Trace{Value: number, Type: entities.Phone}, true
 }
 
+// stripPrefixLoop case-insensitively strips every leading occurrence of
+// prefix, handling both mixed-case and doubled prefixes (e.g. a webmaster
+// typo like "mailto:mailto:x@y.com" or "tel:tel:+1..."). Reports whether at
+// least one prefix was actually stripped.
+func stripPrefixLoop(value, prefix string) (string, bool) {
+	stripped := false
+	for strings.HasPrefix(strings.ToLower(value), prefix) {
+		value = value[len(prefix):]
+		stripped = true
+	}
+	return value, stripped
+}
+
+// looksLikeTelNumber validates raw `tel:` href content, which arrives
+// unshaped (unlike extractPhones' free-text candidates, which are already
+// pre-filtered by phonePattern before looksLikePhone ever sees them). Only
+// digits and common phone punctuation are allowed, with a minimum digit
+// count -- loose on purpose so real international formats (e.g. Russian
+// "+7 495 123-45-67") aren't rejected the way entities.isPhone's strict
+// NANP 3-3-4 grouping would.
+func looksLikeTelNumber(value string) bool {
+	digits := 0
+	for _, r := range value {
+		switch {
+		case r >= '0' && r <= '9':
+			digits++
+		case r == '+' || r == '-' || r == '.' || r == '(' || r == ')' || r == ' ':
+			// allowed separator
+		default:
+			return false
+		}
+	}
+	return digits >= 7
+}
+
+// nonProfilePathSegments are share/tracking-widget paths that appear on
+// essentially any modern website's footer/contact page. A hostname match
+// alone can't distinguish these from the site's actual social profile link
+// -- e.g. "facebook.com/sharer/sharer.php?u=..." is not the site owner's
+// profile, just a "share this page" button.
+var nonProfilePathSegments = map[string]bool{
+	"intent":  true,
+	"sharer":  true,
+	"share":   true,
+	"sharing": true,
+	"dialog":  true,
+	"plugins": true,
+}
+
 func socialLinkTrace(href string) (entities.Trace, bool) {
 	parsed, err := url.Parse(href)
 	if err != nil || parsed.Host == "" {
+		return entities.Trace{}, false
+	}
+
+	// Only reject a known share/widget segment -- an empty path is not
+	// itself disqualifying, since some matchers (e.g. tumblr) identify the
+	// profile via subdomain rather than path.
+	if firstSegment := strings.SplitN(strings.Trim(parsed.Path, "/"), "/", 2)[0]; nonProfilePathSegments[strings.ToLower(firstSegment)] {
 		return entities.Trace{}, false
 	}
 

@@ -72,6 +72,24 @@ func TestSubdomainPlugin_FollowTrace_RequestError(t *testing.T) {
 	assert.Empty(t, traces)
 }
 
+func TestParseSubdomains_ExcludesWildcardEntries(t *testing.T) {
+	got := parseSubdomains("www.example.com\n*.example.com\napi.example.com")
+
+	assert.ElementsMatch(t, []string{"www.example.com", "api.example.com"}, got)
+}
+
+func TestSubdomainPlugin_FollowTrace_ExcludesWildcardSAN(t *testing.T) {
+	plugin := &SubdomainPlugin{fetcher: &fakeCertFetcher{
+		body: `[{"name_value":"www.example.com\n*.example.com"}]`,
+	}}
+
+	traces, err := plugin.FollowTrace(entities.Trace{Value: "example.com", Type: entities.Domain})
+
+	require.NoError(t, err)
+	require.Len(t, traces, 1)
+	assert.Equal(t, "www.example.com", traces[0].Value)
+}
+
 func TestDecodeEntries_InvalidJSON(t *testing.T) {
 	entries, ok := decodeEntries([]byte(`not json`), "example.com")
 	assert.False(t, ok)

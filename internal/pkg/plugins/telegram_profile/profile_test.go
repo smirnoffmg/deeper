@@ -93,6 +93,46 @@ func TestFetchProfile_DescriptionWithEmbeddedEmail(t *testing.T) {
 	assert.True(t, got["email:hello@example.com"])
 }
 
+// Regression: found live -- the old greedy `\S+` URL pattern pulled in
+// trailing punctuation adjacent to the URL in free-text descriptions.
+func TestFetchProfile_URLWithTrailingParenthesisAndPeriodNotCaptured(t *testing.T) {
+	fetcher := &fakePageFetcher{
+		responses: map[string]fakeResponse{
+			channelURL("u"): {status: http.StatusOK, body: `<html><head>
+				<meta property="og:description" content="Follow us (https://t.me/channel).">
+			</head></html>`},
+		},
+	}
+
+	traces, err := fetchProfile(context.Background(), fetcher, "u")
+	require.NoError(t, err)
+	got := map[string]bool{}
+	for _, tr := range traces {
+		got[string(tr.Type)+":"+tr.Value] = true
+	}
+	assert.True(t, got["url:https://t.me/channel"])
+	assert.False(t, got["url:https://t.me/channel)."])
+}
+
+func TestFetchProfile_URLWithTrailingCommaNotCaptured(t *testing.T) {
+	fetcher := &fakePageFetcher{
+		responses: map[string]fakeResponse{
+			channelURL("u"): {status: http.StatusOK, body: `<html><head>
+				<meta property="og:description" content="Contact: https://example.com, or email us">
+			</head></html>`},
+		},
+	}
+
+	traces, err := fetchProfile(context.Background(), fetcher, "u")
+	require.NoError(t, err)
+	got := map[string]bool{}
+	for _, tr := range traces {
+		got[string(tr.Type)+":"+tr.Value] = true
+	}
+	assert.True(t, got["url:https://example.com"])
+	assert.False(t, got["url:https://example.com,"])
+}
+
 func TestFetchProfile_EmptyDescriptionForNonexistentChannel(t *testing.T) {
 	fetcher := &fakePageFetcher{
 		responses: map[string]fakeResponse{

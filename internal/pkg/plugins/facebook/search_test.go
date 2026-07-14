@@ -49,6 +49,33 @@ func TestParseGoogleResults_NoMatchIsIgnored(t *testing.T) {
 	assert.Empty(t, profiles)
 }
 
+// Regression: found live against codescoring.ru -- share widgets, tracking
+// pixels, and the bare host with no profile segment were all captured
+// verbatim as if they were real profile links.
+func TestParseGoogleResults_NonProfileLinksRejected(t *testing.T) {
+	tests := []string{
+		`<a href="https://www.facebook.com/sharer/sharer.php?u=https://example.com">Share</a>`,
+		`<a href="https://www.facebook.com/tr?id=12345&ev=PageView">pixel</a>`,
+		`<a href="https://www.facebook.com/">Facebook</a>`,
+		`<a href="https://www.facebook.com/policies/cookies">Cookie Policy</a>`,
+	}
+
+	for _, body := range tests {
+		t.Run(body, func(t *testing.T) {
+			profiles := parseGoogleResults(body)
+			assert.Empty(t, profiles)
+		})
+	}
+}
+
+func TestParseGoogleResults_RealProfileAmongNoise(t *testing.T) {
+	body := "<a href=\"https://www.facebook.com/sharer/sharer.php?u=x\">Share</a>\n" +
+		`<a href="https://www.facebook.com/john.doe">John Doe</a>`
+
+	profiles := parseGoogleResults(body)
+	assert.Equal(t, []string{"https://www.facebook.com/john.doe"}, profiles)
+}
+
 func expectedGoogleURL(t *testing.T, query string) string {
 	t.Helper()
 	return "https://www.google.com/search?q=" + url.QueryEscape(query+" site:facebook.com")

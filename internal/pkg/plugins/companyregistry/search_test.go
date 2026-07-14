@@ -95,6 +95,44 @@ func TestParseNearbyCompanies_NoSectionReturnsNil(t *testing.T) {
 	assert.Nil(t, parseNearbyCompanies(`<div>nothing here</div>`))
 }
 
+func TestExtractBetween_EmptyValueRejected(t *testing.T) {
+	_, ok := extractBetween(`<i>руководитель</i>: <br>`, "<i>руководитель</i>: ", "<br>")
+	assert.False(t, ok)
+}
+
+func TestExtractBetween_WhitespaceOnlyValueRejected(t *testing.T) {
+	_, ok := extractBetween(`<i>юр.адрес</i>:   </span>`, "<i>юр.адрес</i>: ", "</span>")
+	assert.False(t, ok)
+}
+
+func TestExtractBetween_RealValueStillAccepted(t *testing.T) {
+	value, ok := extractBetween(`<i>руководитель</i>: СМИРНОВ АЛЕКСЕЙ АЛЕКСЕЕВИЧ<br>`, "<i>руководитель</i>: ", "<br>")
+	require.True(t, ok)
+	assert.Equal(t, "СМИРНОВ АЛЕКСЕЙ АЛЕКСЕЕВИЧ", value)
+}
+
+// Regression: list-org.com redacts the director/address fields for some
+// companies, rendering the label with nothing meaningful after it (e.g.
+// "<i>руководитель</i>: <br>"). The old code treated "both markers found"
+// as success regardless of content, producing an empty-valued Name trace.
+func TestSearchCompany_RedactedFieldsProduceNoEmptyTraces(t *testing.T) {
+	fixtureWithRedactedFields := `<div class='card w-100 p-1 p-lg-3 mt-1'><div class='org_list'><p><label><input class='form-check-input' data-id='1412885' type='checkbox' checked><a href='/company/1412885'>ООО "ПРОФИСКОП"</a><br><span>ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ "ПРОФИСКОП"<br><i>руководитель</i>: <br><i>юр.адрес</i>: </span></label></p>`
+
+	fetcher := &fakeSearchFetcher{
+		responses: map[string]fakeResponse{
+			expectedListOrgURL(t, "7813227385"): {status: http.StatusOK, body: fixtureWithRedactedFields},
+		},
+	}
+
+	traces, err := searchCompany(context.Background(), fetcher, "7813227385")
+	require.NoError(t, err)
+
+	for _, tr := range traces {
+		assert.NotEmpty(t, tr.Value, "type %v must not have an empty value", tr.Type)
+	}
+	assert.Len(t, traces, 1, "only the non-redacted company-name trace should be emitted")
+}
+
 func TestExtractCompanyID(t *testing.T) {
 	id, ok := extractCompanyID(realFixture)
 	require.True(t, ok)

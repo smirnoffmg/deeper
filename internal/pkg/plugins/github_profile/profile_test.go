@@ -43,7 +43,7 @@ func TestFetchProfile_AllFieldsPresent(t *testing.T) {
 				"company": "CodeScoring",
 				"blog": "https://codescoring.com",
 				"location": "Saint Petersburg",
-				"email": "alsmirn@example.com",
+				"email": "alsmirn@codescoring.ru",
 				"twitter_username": "alsmirn_tw"
 			}`},
 		},
@@ -60,7 +60,7 @@ func TestFetchProfile_AllFieldsPresent(t *testing.T) {
 	assert.Equal(t, "CodeScoring", got[entities.Company])
 	assert.Equal(t, "https://codescoring.com", got[entities.Url])
 	assert.Equal(t, "Saint Petersburg", got[entities.Address])
-	assert.Equal(t, "alsmirn@example.com", got[entities.Email])
+	assert.Equal(t, "alsmirn@codescoring.ru", got[entities.Email])
 	assert.Equal(t, "alsmirn_tw", got[entities.Twitter])
 }
 
@@ -74,6 +74,20 @@ func TestFetchProfile_AllFieldsAbsent(t *testing.T) {
 	traces, err := fetchProfile(context.Background(), fetcher, "nobody")
 	require.NoError(t, err)
 	assert.Empty(t, traces)
+}
+
+func TestFetchProfile_PlaceholderEmailSkipped(t *testing.T) {
+	fetcher := &fakeProfileFetcher{
+		responses: map[string]fakeResponse{
+			profileURL("u"): {status: http.StatusOK, body: `{"email": "you@example.com"}`},
+		},
+	}
+
+	traces, err := fetchProfile(context.Background(), fetcher, "u")
+	require.NoError(t, err)
+	for _, tr := range traces {
+		assert.NotEqual(t, entities.Email, tr.Type)
+	}
 }
 
 func TestFetchProfile_InvalidBlogURLSkipped(t *testing.T) {

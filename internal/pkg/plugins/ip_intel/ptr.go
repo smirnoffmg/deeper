@@ -2,6 +2,7 @@ package ip_intel
 
 import (
 	"context"
+	"strings"
 
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 )
@@ -18,6 +19,10 @@ func lookupPTR(ctx context.Context, ip string, lookups addrLookup) []entities.Tr
 
 	traces := make([]entities.Trace, 0, len(names))
 	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
 		traces = append(traces, entities.Trace{
 			Type:  entities.DnsRecordPTR,
 			Value: name,

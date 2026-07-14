@@ -81,6 +81,16 @@ func setupEngine(t *testing.T) (*Engine, *database.Repository) {
 	return eng, repo
 }
 
+func TestEngine_ProcessInput_BlankInputRejected(t *testing.T) {
+	eng, repo := setupEngine(t)
+	session, err := repo.CreateScanSession("   ")
+	require.NoError(t, err)
+
+	traces, err := eng.ProcessInput(context.Background(), "   ", session.ID)
+	assert.Error(t, err)
+	assert.Nil(t, traces)
+}
+
 func TestEngine_ProcessInput_PersistsEdgeChain(t *testing.T) {
 	original := state.ActivePlugins[testEngineTraceType]
 	t.Cleanup(func() {

@@ -150,6 +150,95 @@ func TestIsDomain(t *testing.T) {
 	}
 }
 
+func TestIsEmail_Exported(t *testing.T) {
+	tests := []struct {
+		name     string
+		email    string
+		expected bool
+	}{
+		{"valid email", "test@example.com", true},
+		{"invalid, two at signs", "mailto@hello@codescoring.ru", false},
+		{"empty string", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsEmail(tt.email)
+			if result != tt.expected {
+				t.Errorf("IsEmail(%s) = %t, want %t", tt.email, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestIsFacebookProfile_Exported(t *testing.T) {
+	tests := []struct {
+		name     string
+		url      string
+		expected bool
+	}{
+		{"valid profile", "https://www.facebook.com/someuser", true},
+		{"bare host, no profile segment", "https://www.facebook.com/", false},
+		{"sharer widget", "https://www.facebook.com/sharer/sharer.php", false},
+		{"empty string", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsFacebookProfile(tt.url)
+			if result != tt.expected {
+				t.Errorf("IsFacebookProfile(%s) = %t, want %t", tt.url, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestIsIpAddr_Exported(t *testing.T) {
+	tests := []struct {
+		name     string
+		ip       string
+		expected bool
+	}{
+		{"valid IPv4", "192.168.1.1", true},
+		{"trailing CR", "192.168.1.1\r", false},
+		{"empty string", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsIpAddr(tt.ip)
+			if result != tt.expected {
+				t.Errorf("IsIpAddr(%s) = %t, want %t", tt.ip, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestIsRealEmail(t *testing.T) {
+	tests := []struct {
+		name     string
+		email    string
+		expected bool
+	}{
+		{"real address", "hello@codescoring.ru", true},
+		{"git unconfigured default", "you@example.com", false},
+		{"reserved org domain", "test@example.org", false},
+		{"reserved net domain", "test@example.net", false},
+		{"case-insensitive reserved domain", "TEST@EXAMPLE.COM", false},
+		{"malformed, not an email at all", "mailto@hello@codescoring.ru", false},
+		{"empty string", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsRealEmail(tt.email)
+			if result != tt.expected {
+				t.Errorf("IsRealEmail(%s) = %t, want %t", tt.email, result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestIsUrl(t *testing.T) {
 	tests := []struct {
 		name     string

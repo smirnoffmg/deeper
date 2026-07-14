@@ -2,6 +2,7 @@ package entities
 
 import (
 	"regexp"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 )
@@ -190,6 +191,44 @@ func isMacAddr(value string) bool {
 func isBitcoinAddress(value string) bool {
 	bitcoinRegex := `^1[a-km-zA-HJ-NP-Z1-9]{25,34}$`
 	return regexp.MustCompile(bitcoinRegex).MatchString(value)
+}
+
+// IsEmail reports whether value is shaped like a real email address.
+// Exported for plugins outside this package that need to validate a value
+// before trusting it as an Email-typed trace (see contact_crawler, github_*).
+func IsEmail(value string) bool {
+	return isEmail(value)
+}
+
+// IsFacebookProfile reports whether value is shaped like a real Facebook
+// profile URL (as opposed to a share widget, tracking link, or bare host).
+func IsFacebookProfile(value string) bool {
+	return isFacebookProfile(value)
+}
+
+// IsIpAddr reports whether value is a clean, well-formed IPv4 address.
+func IsIpAddr(value string) bool {
+	return isIpAddr(value)
+}
+
+// reservedEmailDomains are IANA-reserved for documentation (RFC 2606) and
+// can never be a real contact address.
+var reservedEmailDomains = map[string]bool{
+	"example.com": true,
+	"example.org": true,
+	"example.net": true,
+}
+
+// IsRealEmail reports whether value is both shaped like an email and not at
+// a reserved documentation-only domain -- e.g. "you@example.com", git's
+// unconfigured-user.email default, is syntactically valid but never a real
+// contact address.
+func IsRealEmail(value string) bool {
+	if !isEmail(value) {
+		return false
+	}
+	domain := strings.ToLower(value[strings.LastIndex(value, "@")+1:])
+	return !reservedEmailDomains[domain]
 }
 
 func guessTraceType(value string) TraceType {

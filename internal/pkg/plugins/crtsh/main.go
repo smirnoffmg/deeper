@@ -110,7 +110,7 @@ func parseSubdomains(nameValue string) []string {
 	subdomains := make(map[string]bool)
 	for _, subdomain := range strings.Split(nameValue, "\n") {
 		subdomain = strings.TrimSpace(subdomain)
-		if subdomain != "" {
+		if subdomain != "" && !strings.Contains(subdomain, "*") {
 			subdomains[subdomain] = true
 		}
 	}

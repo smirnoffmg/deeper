@@ -18,7 +18,14 @@ type pageFetcher interface {
 
 var (
 	emailPattern = regexp.MustCompile(`\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b`)
-	urlPattern   = regexp.MustCompile(`https?://\S+`)
+	// Deliberately excludes common wrapping/trailing punctuation from the
+	// match itself (rather than post-trimming), so a URL parenthesized or
+	// followed by a period/comma in free text -- e.g. "(https://t.me/x)."
+	// -- doesn't pull that punctuation into the captured value. Tradeoff:
+	// a URL whose own query string contains one of these chars gets
+	// truncated too; accepted, since free-text descriptions rarely embed
+	// such URLs and the false-positive risk is worse than the truncation risk.
+	urlPattern = regexp.MustCompile(`https?://[^\s"')\]}>,;:!?]+`)
 )
 
 // extractChannel returns the channel/username from a t.me profile URL, or

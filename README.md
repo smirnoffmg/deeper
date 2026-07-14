@@ -35,6 +35,8 @@ make build
 ./build/deeper scan <email | username | domain | company>
 ```
 
+Every scan also renders its trace graph to a self-contained, interactive HTML report (`~/.deeper/reports/scan-<id>.html`) and opens it in your browser — pan, zoom, hover for details, click a trace to isolate its neighbors. Pass `--no-open` to skip the auto-open (e.g. in CI) without losing the saved report.
+
 Architecture and performance-tuning details live in [`docs/`](docs/) — this README is deliberately just the front door.
 
 ## Responsible use

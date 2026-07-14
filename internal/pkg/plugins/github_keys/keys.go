@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 )
@@ -41,10 +42,11 @@ func fetchSSHKeys(ctx context.Context, fetcher keyFetcher, username string) ([]e
 
 	var traces []entities.Trace
 	for _, k := range raw {
-		if k.Key == "" {
+		key := strings.TrimSpace(k.Key)
+		if key == "" {
 			continue
 		}
-		traces = append(traces, entities.Trace{Type: entities.SSHKey, Value: k.Key})
+		traces = append(traces, entities.Trace{Type: entities.SSHKey, Value: key})
 	}
 	return traces, nil
 }
@@ -80,14 +82,17 @@ func fetchGPGKeys(ctx context.Context, fetcher keyFetcher, username string) ([]e
 
 	var traces []entities.Trace
 	for _, k := range raw {
-		if k.KeyID != "" {
-			traces = append(traces, entities.Trace{Type: entities.PGPKey, Value: k.KeyID})
+		if keyID := strings.TrimSpace(k.KeyID); keyID != "" {
+			traces = append(traces, entities.Trace{Type: entities.PGPKey, Value: keyID})
 		}
 		// Only verified emails: GitHub already checked ownership, so this
 		// avoids trusting a spoofable, unverified claim (same noise-avoidance
 		// discipline contact_crawler and companyregistry already apply).
+		// Verification alone doesn't rule out a placeholder like
+		// "you@example.com" though, so shape/reserved-domain validation
+		// still runs on top via IsRealEmail.
 		for _, e := range k.Emails {
-			if e.Verified && e.Email != "" {
+			if e.Verified && entities.IsRealEmail(e.Email) {
 				traces = append(traces, entities.Trace{Type: entities.Email, Value: e.Email})
 			}
 		}

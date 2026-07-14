@@ -248,6 +248,69 @@ func (r *Repository) GetReachableTraces(scanID, startTraceID int64, maxHops int)
 	return traces, nil
 }
 
+// GetScanGraph returns every node and edge recorded for a scan.
+func (r *Repository) GetScanGraph(scanID int64) ([]Trace, []TraceEdge, error) {
+	r.db.mu.RLock()
+	defer r.db.mu.RUnlock()
+
+	edgeRows, err := r.db.db.Query(
+		`SELECT id, parent_trace_id, child_trace_id, plugin_name, scan_id, discovered_at
+		 FROM trace_edges WHERE scan_id = ?`,
+		scanID,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to query scan edges: %w", err)
+	}
+	defer func() { _ = edgeRows.Close() }()
+
+	var edges []TraceEdge
+	for edgeRows.Next() {
+		var edge TraceEdge
+		var parentID sql.NullInt64
+		if err := edgeRows.Scan(&edge.ID, &parentID, &edge.ChildTraceID, &edge.PluginName, &edge.ScanID, &edge.DiscoveredAt); err != nil {
+			return nil, nil, fmt.Errorf("failed to scan edge row: %w", err)
+		}
+		if parentID.Valid {
+			edge.ParentTraceID = &parentID.Int64
+		}
+		edges = append(edges, edge)
+	}
+	if err := edgeRows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("failed to read edge rows: %w", err)
+	}
+
+	if len(edges) == 0 {
+		return nil, nil, nil
+	}
+
+	nodeRows, err := r.db.db.Query(`
+		SELECT id, value, type, discovered_at FROM traces WHERE id IN (
+			SELECT parent_trace_id FROM trace_edges WHERE scan_id = ?
+			UNION
+			SELECT child_trace_id FROM trace_edges WHERE scan_id = ?
+		)`,
+		scanID, scanID,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to query scan nodes: %w", err)
+	}
+	defer func() { _ = nodeRows.Close() }()
+
+	var nodes []Trace
+	for nodeRows.Next() {
+		var node Trace
+		if err := nodeRows.Scan(&node.ID, &node.Value, &node.Type, &node.DiscoveredAt); err != nil {
+			return nil, nil, fmt.Errorf("failed to scan node row: %w", err)
+		}
+		nodes = append(nodes, node)
+	}
+	if err := nodeRows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("failed to read node rows: %w", err)
+	}
+
+	return nodes, edges, nil
+}
+
 // CountEdges returns the number of edges for a scan (test helper).
 func (r *Repository) CountEdges(scanID int64) (int, error) {
 	r.db.mu.RLock()

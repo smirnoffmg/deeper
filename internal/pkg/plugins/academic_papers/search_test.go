@@ -50,6 +50,19 @@ func TestSearchAuthorPapers_NonASCIIQueryIsURLEncoded(t *testing.T) {
 	assert.Equal(t, "СМИРНОВ АЛЕКСЕЙ", parsed.Query().Get("query"))
 }
 
+func TestSearchAuthorPapers_EmptyURLSkipped(t *testing.T) {
+	body := `{"data":[{"title":"A Paper","url":"","authors":[{"name":"Jane Doe"}]},{"title":"Another","url":"https://example.com/real","authors":[{"name":"Jane Doe"}]}]}`
+	fetcher := &fakeSearchFetcher{
+		responses: map[string]fakeResponse{
+			expectedSemanticScholarURL(t, "Jane Doe"): {status: http.StatusOK, body: body},
+		},
+	}
+
+	urls, err := searchAuthorPapers(context.Background(), fetcher, "Jane Doe")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"https://example.com/real"}, urls)
+}
+
 func TestSearchAuthorPapers_NonOKStatusReturnsError(t *testing.T) {
 	fetcher := &fakeSearchFetcher{responses: map[string]fakeResponse{}, defaultStatus: http.StatusTooManyRequests}
 

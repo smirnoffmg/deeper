@@ -162,6 +162,81 @@ func TestRepository_GetReachableTraces_HopBounding(t *testing.T) {
 	assert.False(t, hasLeaf)
 }
 
+func TestRepository_GetScanGraph_Empty(t *testing.T) {
+	repo := newTestRepo(t)
+	scanID := newTestScan(t, repo)
+
+	nodes, edges, err := repo.GetScanGraph(scanID)
+	require.NoError(t, err)
+	assert.Empty(t, nodes)
+	assert.Empty(t, edges)
+}
+
+func TestRepository_GetScanGraph_ReturnsNodesAndEdges(t *testing.T) {
+	repo := newTestRepo(t)
+	scanID := newTestScan(t, repo)
+
+	root := entities.Trace{Value: "root.com", Type: entities.Domain}
+	leaf := entities.Trace{Value: "leaf.root.com", Type: entities.Subdomain}
+
+	require.NoError(t, repo.PersistDiscoveries(scanID, []entities.Discovery{
+		{Parent: root, PluginName: "p1", Child: leaf},
+	}))
+
+	nodes, edges, err := repo.GetScanGraph(scanID)
+	require.NoError(t, err)
+	require.Len(t, nodes, 2)
+	require.Len(t, edges, 1)
+
+	values := map[string]entities.TraceType{}
+	for _, n := range nodes {
+		values[n.Value] = n.Type
+	}
+	assert.Equal(t, entities.Domain, values["root.com"])
+	assert.Equal(t, entities.Subdomain, values["leaf.root.com"])
+	assert.Equal(t, "p1", edges[0].PluginName)
+}
+
+func TestRepository_GetScanGraph_MultiParentDedupsNodes(t *testing.T) {
+	repo := newTestRepo(t)
+	scanID := newTestScan(t, repo)
+
+	parentA := entities.Trace{Value: "parent-a.com", Type: entities.Domain}
+	parentB := entities.Trace{Value: "parent-b.com", Type: entities.Domain}
+	child := entities.Trace{Value: "shared.child.com", Type: entities.Subdomain}
+
+	require.NoError(t, repo.PersistDiscoveries(scanID, []entities.Discovery{
+		{Parent: parentA, PluginName: "plugin-x", Child: child},
+		{Parent: parentB, PluginName: "plugin-x", Child: child},
+	}))
+
+	nodes, edges, err := repo.GetScanGraph(scanID)
+	require.NoError(t, err)
+	assert.Len(t, nodes, 3)
+	assert.Len(t, edges, 2)
+}
+
+func TestRepository_GetScanGraph_ScopedToScan(t *testing.T) {
+	repo := newTestRepo(t)
+	scanA := newTestScan(t, repo)
+	scanB := newTestScan(t, repo)
+
+	require.NoError(t, repo.PersistDiscoveries(scanA, []entities.Discovery{
+		{Parent: entities.Trace{Value: "a-root.com", Type: entities.Domain}, PluginName: "p1", Child: entities.Trace{Value: "a-leaf.com", Type: entities.Domain}},
+	}))
+	require.NoError(t, repo.PersistDiscoveries(scanB, []entities.Discovery{
+		{Parent: entities.Trace{Value: "b-root.com", Type: entities.Domain}, PluginName: "p1", Child: entities.Trace{Value: "b-leaf.com", Type: entities.Domain}},
+	}))
+
+	nodes, edges, err := repo.GetScanGraph(scanA)
+	require.NoError(t, err)
+	require.Len(t, edges, 1)
+	require.Len(t, nodes, 2)
+	for _, n := range nodes {
+		assert.Contains(t, n.Value, "a-")
+	}
+}
+
 func TestRepository_GetReachableTraces_HandlesCycle(t *testing.T) {
 	repo := newTestRepo(t)
 	scanID := newTestScan(t, repo)

@@ -138,5 +138,9 @@ func extractBetween(html, startMarker, endMarker string) (string, bool) {
 		return "", false
 	}
 
-	return strings.TrimSpace(html[start : start+end]), true
+	value := strings.TrimSpace(html[start : start+end])
+	if value == "" {
+		return "", false
+	}
+	return value, true
 }

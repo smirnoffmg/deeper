@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>deeper — scan graph</title>
+<style>
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0b0f14; color: #e6edf3;
+  }
+  #mynetwork { position: absolute; inset: 0; background: #0b0f14; }
+  header {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 2;
+    padding: 10px 16px; display: flex; align-items: baseline; gap: 12px;
+    background: rgba(11,15,20,0.85); border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  header h1 { font-size: 14px; font-weight: 600; margin: 0; opacity: 0.85; }
+  header span { font-size: 12px; opacity: 0.6; }
+  header .hint { margin-left: auto; }
+  #legend {
+    position: absolute; bottom: 12px; left: 12px; z-index: 2;
+    padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(11,15,20,0.88); font-size: 11px; max-height: 40vh; overflow-y: auto;
+  }
+  #legend .row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+  #legend .swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+  #details {
+    position: absolute; top: 52px; right: 12px; z-index: 2; width: 320px;
+    padding: 14px 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(11,15,20,0.92); font-size: 12px; display: none;
+    max-height: calc(100vh - 80px); overflow-y: auto;
+  }
+  #details .type {
+    display: inline-block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+    opacity: 0.65; margin-bottom: 6px;
+  }
+  #details .value { font-size: 13px; line-height: 1.5; word-break: break-word; margin-bottom: 12px; }
+  #details .field-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.5; margin-bottom: 3px; }
+  #details .field { margin-bottom: 10px; word-break: break-word; line-height: 1.5; }
+  #details .close {
+    position: absolute; top: 10px; right: 12px; cursor: pointer; opacity: 0.5; font-size: 14px;
+    background: none; border: none; color: inherit;
+  }
+  #details .close:hover { opacity: 1; }
+  #empty {
+    position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    font-size: 13px; opacity: 0.6; z-index: 1;
+  }
+  .vis-tooltip {
+    background: rgba(11,15,20,0.95) !important; border: 1px solid rgba(255,255,255,0.12) !important;
+    border-radius: 6px !important; padding: 6px 9px !important; font-family: inherit !important;
+    max-width: 320px !important;
+  }
+  .tt-type { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.65; margin-bottom: 2px; }
+  .tt-value { font-size: 12px; word-break: break-word; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>deeper — scan graph</h1>
+    <span id="stats"></span>
+    <span class="hint">scroll to zoom · drag to pan · click a trace for details</span>
+  </header>
+  <div id="mynetwork"></div>
+  <div id="legend"></div>
+  <div id="details">
+    <button class="close" title="Close">✕</button>
+    <div class="type" id="details-type"></div>
+    <div class="value" id="details-value"></div>
+    <div class="field-label">Discovered via</div>
+    <div class="field" id="details-discovered"></div>
+    <div class="field-label">Links</div>
+    <div class="field" id="details-links"></div>
+  </div>
+  <div id="empty">No traces recorded for this scan.</div>
+
+  <script type="application/json" id="graph-data">{{.GraphDataJSON}}</script>
+  <script>{{.VisNetworkJS}}</script>
+  <script>
+  (function () {
+    "use strict";
+
+    var raw = JSON.parse(document.getElementById("graph-data").textContent);
+    var rawNodes = raw.nodes || [];
+    var rawEdges = raw.edges || [];
+
+    document.getElementById("stats").textContent =
+      rawNodes.length + " traces, " + rawEdges.length + " links";
+
+    if (rawNodes.length === 0) {
+      document.getElementById("empty").style.display = "flex";
+      return;
+    }
+
+    // ---- deterministic color per trace type ----
+    function hashHue(str) {
+      var h = 0;
+      for (var i = 0; i < str.length; i++) {
+        h = (h * 31 + str.charCodeAt(i)) >>> 0;
+      }
+      return h % 360;
+    }
+    var colorCache = {};
+    function colorFor(type) {
+      if (!colorCache[type]) {
+        colorCache[type] = "hsl(" + hashHue(type) + ", 62%, 58%)";
+      }
+      return colorCache[type];
+    }
+
+    // ---- label cleanup: scraped values can contain newlines/long runs ----
+    function cleanLabel(value) {
+      return String(value).replace(/\s+/g, " ").trim();
+    }
+    function truncate(value, max) {
+      return value.length > max ? value.slice(0, max - 1) + "…" : value;
+    }
+
+    var rawNodeById = {};
+    rawNodes.forEach(function (n) {
+      n.label = cleanLabel(n.label);
+      rawNodeById[n.id] = n;
+    });
+
+    var degreeById = {};
+    rawEdges.forEach(function (e) {
+      degreeById[e.from] = (degreeById[e.from] || 0) + 1;
+      degreeById[e.to] = (degreeById[e.to] || 0) + 1;
+    });
+
+    var EDGE_COLOR = "rgba(148,163,184,1)";
+    var EDGE_OPACITY = 0.35;
+    var EDGE_DIM_OPACITY = 0.05;
+    var DIM_OPACITY = 0.12;
+
+    function buildTooltip(n) {
+      var wrap = document.createElement("div");
+      var typeEl = document.createElement("div");
+      typeEl.className = "tt-type";
+      typeEl.textContent = n.type;
+      var valEl = document.createElement("div");
+      valEl.className = "tt-value";
+      valEl.textContent = n.label;
+      wrap.appendChild(typeEl);
+      wrap.appendChild(valEl);
+      return wrap;
+    }
+
+    var nodesDataset = new vis.DataSet(rawNodes.map(function (n) {
+      return {
+        id: n.id,
+        label: truncate(n.label, 26),
+        title: buildTooltip(n),
+        color: colorFor(n.type),
+        size: Math.min(26, 7 + (degreeById[n.id] || 0) * 1.6),
+        opacity: 1
+      };
+    }));
+
+    var edgesDataset = new vis.DataSet(rawEdges.map(function (e, idx) {
+      var tooltip = document.createElement("div");
+      tooltip.className = "tt-value";
+      tooltip.textContent = "via " + e.label;
+      return {
+        id: idx,
+        from: e.from,
+        to: e.to,
+        title: tooltip,
+        color: { color: EDGE_COLOR, opacity: EDGE_OPACITY },
+        width: 1,
+        arrows: { to: { enabled: true, scaleFactor: 0.35 } },
+        smooth: { type: "continuous", roundness: 0.4 }
+      };
+    }));
+
+    var container = document.getElementById("mynetwork");
+    var network = new vis.Network(container, { nodes: nodesDataset, edges: edgesDataset }, {
+      nodes: {
+        shape: "dot",
+        borderWidth: 1,
+        font: { color: "#e6edf3", size: 11, face: "inherit" }
+      },
+      edges: { hoverWidth: 1.5, selectionWidth: 1.5 },
+      physics: {
+        solver: "barnesHut",
+        barnesHut: {
+          gravitationalConstant: -4000,
+          springLength: 130,
+          springConstant: 0.02,
+          avoidOverlap: 0.6
+        },
+        stabilization: { iterations: 400 }
+      },
+      interaction: { hover: true, tooltipDelay: 120, hideEdgesOnDrag: true }
+    });
+
+    // ---- details panel + neighbor focus on click ----
+    var detailsPanel = document.getElementById("details");
+    var detailsType = document.getElementById("details-type");
+    var detailsValue = document.getElementById("details-value");
+    var detailsDiscovered = document.getElementById("details-discovered");
+    var detailsLinks = document.getElementById("details-links");
+    document.querySelector("#details .close").addEventListener("click", function () {
+      network.unselectAll();
+      hideDetails();
+      resetHighlight();
+    });
+
+    function hideDetails() {
+      detailsPanel.style.display = "none";
+    }
+
+    function showDetails(id) {
+      var n = rawNodeById[id];
+      var incoming = rawEdges.filter(function (e) { return e.to === id; });
+      var outgoing = rawEdges.filter(function (e) { return e.from === id; });
+
+      detailsType.textContent = n.type;
+      detailsValue.textContent = n.label;
+
+      if (incoming.length === 0) {
+        detailsDiscovered.textContent = "— (scan seed)";
+      } else {
+        var plugins = [];
+        incoming.forEach(function (e) {
+          if (plugins.indexOf(e.label) === -1) plugins.push(e.label);
+        });
+        detailsDiscovered.textContent = plugins.join(", ");
+      }
+
+      detailsLinks.textContent = (incoming.length + outgoing.length) + " connection(s)";
+      detailsPanel.style.display = "block";
+    }
+
+    function resetHighlight() {
+      nodesDataset.update(nodesDataset.getIds().map(function (id) {
+        return { id: id, opacity: 1 };
+      }));
+      edgesDataset.update(edgesDataset.getIds().map(function (id) {
+        return { id: id, color: { color: EDGE_COLOR, opacity: EDGE_OPACITY } };
+      }));
+    }
+
+    network.on("selectNode", function (params) {
+      var id = params.nodes[0];
+      var keep = {};
+      keep[id] = true;
+      network.getConnectedNodes(id).forEach(function (nid) { keep[nid] = true; });
+
+      nodesDataset.update(nodesDataset.getIds().map(function (nid) {
+        return { id: nid, opacity: keep[nid] ? 1 : DIM_OPACITY };
+      }));
+      edgesDataset.update(edgesDataset.getIds().map(function (eid) {
+        var e = edgesDataset.get(eid);
+        var visible = keep[e.from] && keep[e.to];
+        return { id: eid, color: { color: EDGE_COLOR, opacity: visible ? 0.85 : EDGE_DIM_OPACITY } };
+      }));
+
+      showDetails(id);
+    });
+
+    network.on("deselectNode", function () {
+      resetHighlight();
+      hideDetails();
+    });
+
+    network.once("stabilizationIterationsDone", function () {
+      network.setOptions({ physics: false });
+    });
+
+    // ---- legend ----
+    var legend = document.getElementById("legend");
+    var typeCounts = {};
+    rawNodes.forEach(function (n) { typeCounts[n.type] = (typeCounts[n.type] || 0) + 1; });
+    Object.keys(typeCounts).sort().forEach(function (type) {
+      var row = document.createElement("div");
+      row.className = "row";
+      var swatch = document.createElement("div");
+      swatch.className = "swatch";
+      swatch.style.background = colorFor(type);
+      var text = document.createElement("span");
+      text.textContent = type + " (" + typeCounts[type] + ")";
+      row.appendChild(swatch);
+      row.appendChild(text);
+      legend.appendChild(row);
+    });
+  })();
+  </script>
+</body>
+</html>

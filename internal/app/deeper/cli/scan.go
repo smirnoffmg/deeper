@@ -3,11 +3,16 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 
+	"github.com/smirnoffmg/deeper/internal/app/deeper/graphreport"
+	"github.com/smirnoffmg/deeper/internal/pkg/browser"
+	"github.com/smirnoffmg/deeper/internal/pkg/database"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 )
 
@@ -15,6 +20,7 @@ var (
 	scanDepth   int
 	scanFilters []string
 	scanSave    string
+	scanNoOpen  bool
 )
 
 // scanCmd represents the scan command
@@ -109,6 +115,15 @@ Examples:
 			log.Info().Msgf("Results saved to %s", scanSave)
 		}
 
+		graphPath, err := saveGraphReport(repo, session.ID, !scanNoOpen)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to generate graph report")
+			return err
+		}
+		if graphPath != "" {
+			log.Info().Msgf("Graph report: %s", graphPath)
+		}
+
 		return nil
 	},
 }
@@ -117,6 +132,69 @@ func init() {
 	scanCmd.Flags().IntVar(&scanDepth, "depth", 0, "maximum scan depth (0 for unlimited)")
 	scanCmd.Flags().StringSliceVar(&scanFilters, "filter", []string{}, "filter results by trace types (comma-separated)")
 	scanCmd.Flags().StringVar(&scanSave, "save", "", "save results to file")
+	scanCmd.Flags().BoolVar(&scanNoOpen, "no-open", false, "do not auto-open the graph report in a browser")
+}
+
+// buildGraphReport maps stored graph rows to graphreport's presentation
+// types. Edges with a nil ParentTraceID are the scan's seed edge (see
+// database.SeedPluginName) — the root trace is still present as a node via
+// its child_trace_id side, it just has no real parent to draw an edge from.
+func buildGraphReport(nodes []database.Trace, edges []database.TraceEdge) ([]graphreport.Node, []graphreport.Edge) {
+	reportNodes := make([]graphreport.Node, 0, len(nodes))
+	for _, n := range nodes {
+		reportNodes = append(reportNodes, graphreport.Node{ID: n.ID, Label: n.Value, Type: string(n.Type)})
+	}
+
+	reportEdges := make([]graphreport.Edge, 0, len(edges))
+	for _, e := range edges {
+		if e.ParentTraceID == nil {
+			continue
+		}
+		reportEdges = append(reportEdges, graphreport.Edge{From: *e.ParentTraceID, To: e.ChildTraceID, Label: e.PluginName})
+	}
+
+	return reportNodes, reportEdges
+}
+
+// saveGraphReport renders the scan's discovery graph to a standalone HTML
+// file under ~/.deeper/reports and optionally opens it in the browser. It
+// returns an empty path (no error) when the scan recorded no traces.
+func saveGraphReport(repo *database.Repository, sessionID int64, openInBrowser bool) (string, error) {
+	nodes, edges, err := repo.GetScanGraph(sessionID)
+	if err != nil {
+		return "", fmt.Errorf("failed to load scan graph: %w", err)
+	}
+	if len(nodes) == 0 {
+		return "", nil
+	}
+
+	reportNodes, reportEdges := buildGraphReport(nodes, edges)
+	html, err := graphreport.Render(reportNodes, reportEdges)
+	if err != nil {
+		return "", fmt.Errorf("failed to render graph report: %w", err)
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+	reportsDir := filepath.Join(homeDir, ".deeper", "reports")
+	if err := os.MkdirAll(reportsDir, 0o755); err != nil {
+		return "", fmt.Errorf("failed to create reports directory: %w", err)
+	}
+
+	path := filepath.Join(reportsDir, fmt.Sprintf("scan-%d.html", sessionID))
+	if err := os.WriteFile(path, []byte(html), 0o644); err != nil {
+		return "", fmt.Errorf("failed to write graph report: %w", err)
+	}
+
+	if openInBrowser {
+		if err := browser.Open(path); err != nil {
+			log.Warn().Err(err).Msg("Failed to open graph report in browser")
+		}
+	}
+
+	return path, nil
 }
 
 func applyFilters(traces []entities.Trace, filters []string) []entities.Trace {

@@ -22,7 +22,7 @@ func TestFollowTrace_MergesSSHAndGPGTraces(t *testing.T) {
 	fetcher := &fakeKeyFetcher{
 		responses: map[string]fakeResponse{
 			sshURL("alsmirn"): {status: http.StatusOK, body: `[{"id":1,"key":"ssh-rsa AAA"}]`},
-			gpgURL("alsmirn"): {status: http.StatusOK, body: `[{"key_id":"ABC","emails":[{"email":"a@example.com","verified":true}]}]`},
+			gpgURL("alsmirn"): {status: http.StatusOK, body: `[{"key_id":"ABC","emails":[{"email":"a@keyholder.dev","verified":true}]}]`},
 		},
 	}
 	p := &GitHubKeysPlugin{fetcher: fetcher}

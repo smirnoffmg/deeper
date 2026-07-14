@@ -47,6 +47,19 @@ func TestLookupWhois_TaxpayerIDAlsoEmitsCompanyTrace(t *testing.T) {
 	}
 }
 
+func TestLookupWhois_EmptyValueLinesSkipped(t *testing.T) {
+	client := &fakeWhoisClient{responses: map[string]string{
+		key(ianaWhoisServer, "ru"):        "whois: 127.0.0.1\n",
+		key("127.0.0.1:43", "example.ru"): "org:\ndomain: example.ru\ntaxpayer-id:\n",
+	}}
+
+	traces, err := lookupWhois(context.Background(), client, "example.ru")
+	require.NoError(t, err)
+	require.Len(t, traces, 1)
+	assert.Equal(t, "domain: example.ru", traces[0].Value)
+	assert.Equal(t, entities.Whois, traces[0].Type)
+}
+
 func TestLookupWhois_NoReferralLineReturnsNoTraces(t *testing.T) {
 	client := &fakeWhoisClient{responses: map[string]string{
 		key(ianaWhoisServer, "ru"): "% no whois or refer field\n",

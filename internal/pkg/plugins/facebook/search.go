@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 )
 
 type searchFetcher interface {
@@ -46,7 +48,11 @@ func parseGoogleResults(body string) []string {
 		if end == -1 {
 			continue
 		}
-		profiles = append(profiles, line[start:start+end])
+		candidate := line[start : start+end]
+		if !entities.IsFacebookProfile(candidate) {
+			continue
+		}
+		profiles = append(profiles, candidate)
 	}
 	return profiles
 }

@@ -134,8 +134,8 @@ func TestFetchGPGKeys_MultipleKeys(t *testing.T) {
 	fetcher := &fakeKeyFetcher{
 		responses: map[string]fakeResponse{
 			gpgURL("u"): {status: http.StatusOK, body: `[
-				{"key_id": "AAA", "emails": [{"email": "a@example.com", "verified": true}]},
-				{"key_id": "BBB", "emails": [{"email": "b@example.com", "verified": true}]}
+				{"key_id": "AAA", "emails": [{"email": "a@keyholder.dev", "verified": true}]},
+				{"key_id": "BBB", "emails": [{"email": "b@keyholder.dev", "verified": true}]}
 			]`},
 		},
 	}
@@ -143,6 +143,50 @@ func TestFetchGPGKeys_MultipleKeys(t *testing.T) {
 	traces, err := fetchGPGKeys(context.Background(), fetcher, "u")
 	require.NoError(t, err)
 	assert.Len(t, traces, 4)
+}
+
+func TestFetchSSHKeys_WhitespaceOnlyKeySkipped(t *testing.T) {
+	fetcher := &fakeKeyFetcher{
+		responses: map[string]fakeResponse{
+			sshURL("u"): {status: http.StatusOK, body: `[{"key": "   "}]`},
+		},
+	}
+
+	traces, err := fetchSSHKeys(context.Background(), fetcher, "u")
+	require.NoError(t, err)
+	assert.Empty(t, traces)
+}
+
+func TestFetchGPGKeys_WhitespaceOnlyKeyIDSkipped(t *testing.T) {
+	fetcher := &fakeKeyFetcher{
+		responses: map[string]fakeResponse{
+			gpgURL("u"): {status: http.StatusOK, body: `[{"key_id": "   "}]`},
+		},
+	}
+
+	traces, err := fetchGPGKeys(context.Background(), fetcher, "u")
+	require.NoError(t, err)
+	assert.Empty(t, traces)
+}
+
+// Regression: GitHub's "verified" flag only confirms the account owns the
+// address -- it says nothing about whether that address is a real,
+// non-placeholder email like git's "you@example.com" default.
+func TestFetchGPGKeys_PlaceholderVerifiedEmailExcluded(t *testing.T) {
+	fetcher := &fakeKeyFetcher{
+		responses: map[string]fakeResponse{
+			gpgURL("u"): {status: http.StatusOK, body: `[{
+				"key_id": "ABC123",
+				"emails": [{"email": "you@example.com", "verified": true}]
+			}]`},
+		},
+	}
+
+	traces, err := fetchGPGKeys(context.Background(), fetcher, "u")
+	require.NoError(t, err)
+	for _, tr := range traces {
+		assert.NotEqual(t, entities.Email, tr.Type)
+	}
 }
 
 func TestFetchGPGKeys_NonOKStatusReturnsError(t *testing.T) {

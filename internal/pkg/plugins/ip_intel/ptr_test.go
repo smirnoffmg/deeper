@@ -55,6 +55,17 @@ func TestLookupPTR_LookupError(t *testing.T) {
 	assert.Empty(t, traces)
 }
 
+func TestLookupPTR_WhitespaceOnlyHostnameSkipped(t *testing.T) {
+	lookups := &fakeAddrLookup{
+		names: []string{"real.example.com.", "   "},
+	}
+
+	traces := lookupPTR(context.Background(), "198.51.100.5", lookups)
+
+	require.Len(t, traces, 1)
+	assert.Equal(t, "real.example.com.", traces[0].Value)
+}
+
 func TestLookupPTR_EmptyResult(t *testing.T) {
 	lookups := &fakeAddrLookup{
 		names: []string{},

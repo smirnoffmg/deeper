@@ -87,6 +87,32 @@ func TestMailtoTrace(t *testing.T) {
 	assert.False(t, ok)
 }
 
+// Regression: found live against codescoring.ru — a doubled "mailto:"
+// prefix (webmaster typo) left "mailto@hello@codescoring.ru" un-stripped
+// and, since the old code never validated the result, it was emitted as a
+// real Email trace anyway.
+func TestMailtoTrace_DoubledPrefixRejected(t *testing.T) {
+	_, ok := mailtoTrace("mailto:mailto@hello@codescoring.ru")
+	assert.False(t, ok)
+}
+
+func TestMailtoTrace_DoubledPrefixWithValidAddressStripsCleanly(t *testing.T) {
+	trace, ok := mailtoTrace("mailto:mailto:info@example.com")
+	require.True(t, ok)
+	assert.Equal(t, "info@example.com", trace.Value)
+}
+
+func TestMailtoTrace_MixedCasePrefixStripped(t *testing.T) {
+	trace, ok := mailtoTrace("MailTo:info@example.com")
+	require.True(t, ok)
+	assert.Equal(t, "info@example.com", trace.Value)
+}
+
+func TestMailtoTrace_NonEmailValueRejected(t *testing.T) {
+	_, ok := mailtoTrace("mailto:unsubscribe")
+	assert.False(t, ok)
+}
+
 func TestTelTrace(t *testing.T) {
 	trace, ok := telTrace("tel:+1-555-123-4567")
 	require.True(t, ok)
@@ -95,6 +121,23 @@ func TestTelTrace(t *testing.T) {
 
 	_, ok = telTrace("mailto:x@y.com")
 	assert.False(t, ok)
+}
+
+func TestTelTrace_DoubledPrefixStripsCleanly(t *testing.T) {
+	trace, ok := telTrace("tel:tel:+18005550199")
+	require.True(t, ok)
+	assert.Equal(t, "+18005550199", trace.Value)
+}
+
+func TestTelTrace_NonPhoneValueRejected(t *testing.T) {
+	_, ok := telTrace("tel:contact-us")
+	assert.False(t, ok)
+}
+
+func TestTelTrace_InternationalFormatAccepted(t *testing.T) {
+	trace, ok := telTrace("tel:+7 495 123-45-67")
+	require.True(t, ok)
+	assert.Equal(t, "+7 495 123-45-67", trace.Value)
 }
 
 func TestSocialLinkTrace(t *testing.T) {
@@ -130,4 +173,19 @@ func TestSocialLinkTrace(t *testing.T) {
 
 	_, ok := socialLinkTrace("https://example.com/profile")
 	assert.False(t, ok)
+}
+
+func TestSocialLinkTrace_ShareWidgetsRejected(t *testing.T) {
+	tests := []string{
+		"https://twitter.com/intent/tweet?url=https://example.com&text=Check+this+out",
+		"https://www.facebook.com/sharer/sharer.php?u=https://example.com",
+		"https://www.linkedin.com/sharing/share-offsite/?url=https://example.com",
+	}
+
+	for _, href := range tests {
+		t.Run(href, func(t *testing.T) {
+			_, ok := socialLinkTrace(href)
+			assert.False(t, ok)
+		})
+	}
 }

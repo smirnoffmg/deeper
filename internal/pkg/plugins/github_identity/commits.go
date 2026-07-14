@@ -270,7 +270,9 @@ func authorsToTraces(authors []commitAuthor) []entities.Trace {
 
 	for _, author := range authors {
 		addTrace(entities.Name, author.Name)
-		addTrace(entities.Email, author.Email)
+		if entities.IsRealEmail(author.Email) {
+			addTrace(entities.Email, author.Email)
+		}
 		addTrace(entities.Username, author.Login)
 	}
 

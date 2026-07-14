@@ -58,7 +58,9 @@ func fetchProfile(ctx context.Context, fetcher profileFetcher, username string) 
 	addTrace(entities.Name, raw.Name)
 	addTrace(entities.Company, raw.Company)
 	addTrace(entities.Address, raw.Location)
-	addTrace(entities.Email, raw.Email)
+	if entities.IsRealEmail(strings.TrimSpace(raw.Email)) {
+		addTrace(entities.Email, raw.Email)
+	}
 	addTrace(entities.Twitter, raw.TwitterUsername)
 
 	if blog := strings.TrimSpace(raw.Blog); blog != "" {

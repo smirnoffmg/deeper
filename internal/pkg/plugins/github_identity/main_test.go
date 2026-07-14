@@ -129,7 +129,7 @@ func TestFollowTrace_GitLabRepositoryTraceIsSkipped(t *testing.T) {
 
 func TestFollowTrace_SharedRepoOnlyReturnsOwnerTraces(t *testing.T) {
 	sharedRepoCommits := `[
-		{"author": {"login": "iloncka"}, "commit": {"author": {"name": "Ilona Kovaleva", "email": "iloncka@example.com"}, "committer": {"name": "Ilona Kovaleva", "email": "iloncka@example.com"}, "message": "init"}},
+		{"author": {"login": "iloncka"}, "commit": {"author": {"name": "Ilona Kovaleva", "email": "iloncka@ilonka-dev.ru"}, "committer": {"name": "Ilona Kovaleva", "email": "iloncka@ilonka-dev.ru"}, "message": "init"}},
 		{"commit": {"author": {"name": "Erick Ramirez", "email": "erick@datastax.com"}, "committer": {"name": "Erick Ramirez", "email": "erick@datastax.com"}, "message": "a"}},
 		{"commit": {"author": {"name": "Stefano Lottini", "email": "stefano@datastax.com"}, "committer": {"name": "Stefano Lottini", "email": "stefano@datastax.com"}, "message": "b"}},
 		{"commit": {"author": {"name": "Cedrick Lunven", "email": "cedrick@datastax.com"}, "committer": {"name": "Cedrick Lunven", "email": "cedrick@datastax.com"}, "message": "c"}},
@@ -151,7 +151,7 @@ func TestFollowTrace_SharedRepoOnlyReturnsOwnerTraces(t *testing.T) {
 		}
 	}
 	assert.Contains(t, traces, entities.Trace{Type: entities.Name, Value: "Ilona Kovaleva"})
-	assert.Contains(t, traces, entities.Trace{Type: entities.Email, Value: "iloncka@example.com"})
+	assert.Contains(t, traces, entities.Trace{Type: entities.Email, Value: "iloncka@ilonka-dev.ru"})
 	assert.Contains(t, traces, entities.Trace{Type: entities.Username, Value: "iloncka"})
 }
 

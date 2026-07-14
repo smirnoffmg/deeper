@@ -248,9 +248,9 @@ func TestFilterAuthorsForSharedRepo_OwnerMatchIsCaseInsensitive(t *testing.T) {
 
 func TestAuthorsToTraces(t *testing.T) {
 	authors := []commitAuthor{
-		{Name: "Alexey Smirnov", Email: "alex@example.com", Login: "alsmirn"},
-		{Name: "Alexey Smirnov", Email: "alex@example.com", Login: "alsmirn"},
-		{Name: "Bot User", Email: "bot@example.com"},
+		{Name: "Alexey Smirnov", Email: "alex@smirnov.dev", Login: "alsmirn"},
+		{Name: "Alexey Smirnov", Email: "alex@smirnov.dev", Login: "alsmirn"},
+		{Name: "Bot User", Email: "bot@ci.dev"},
 	}
 
 	traces := authorsToTraces(authors)
@@ -270,4 +270,31 @@ func TestAuthorsToTraces(t *testing.T) {
 	assert.Equal(t, 2, names)
 	assert.Equal(t, 2, emails)
 	assert.Equal(t, 1, usernames)
+}
+
+// Regression: git falls back to placeholder addresses like "you@example.com"
+// when a contributor never configures user.email. These are syntactically
+// valid emails but never real contact info, so they must not become traces.
+func TestAuthorsToTraces_PlaceholderEmailRejected(t *testing.T) {
+	authors := []commitAuthor{
+		{Name: "Someone", Email: "you@example.com", Login: "someone"},
+	}
+
+	traces := authorsToTraces(authors)
+
+	for _, tr := range traces {
+		assert.NotEqual(t, entities.Email, tr.Type, "placeholder email must not become a trace")
+	}
+}
+
+func TestAuthorsToTraces_MalformedEmailRejected(t *testing.T) {
+	authors := []commitAuthor{
+		{Name: "Someone", Email: "not-an-email", Login: "someone"},
+	}
+
+	traces := authorsToTraces(authors)
+
+	for _, tr := range traces {
+		assert.NotEqual(t, entities.Email, tr.Type, "malformed email must not become a trace")
+	}
 }

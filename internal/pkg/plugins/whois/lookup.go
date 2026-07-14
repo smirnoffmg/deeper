@@ -94,11 +94,15 @@ func parseWhoisLines(response string) []entities.Trace {
 		if len(parts) != 2 {
 			continue
 		}
+		value := strings.TrimSpace(parts[1])
+		if value == "" {
+			continue
+		}
 		traces = append(traces, entities.Trace{Value: line, Type: entities.Whois})
 
 		key := strings.ToLower(strings.TrimSpace(parts[0]))
 		if companyIDKeys[key] {
-			traces = append(traces, entities.Trace{Value: strings.TrimSpace(parts[1]), Type: entities.Company})
+			traces = append(traces, entities.Trace{Value: value, Type: entities.Company})
 		}
 	}
 	return traces

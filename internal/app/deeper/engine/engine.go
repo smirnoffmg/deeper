@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,6 +35,11 @@ func NewEngine(cfg *config.Config, metricsCollector *metrics.MetricsCollector, r
 
 // ProcessInput processes an input string and returns all discovered traces
 func (e *Engine) ProcessInput(ctx context.Context, input string, scanID int64) ([]entities.Trace, error) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return nil, fmt.Errorf("scan input must not be empty")
+	}
+
 	initialTrace := entities.NewTrace(input)
 
 	rootID, err := e.repo.GetOrCreateTrace(initialTrace)
