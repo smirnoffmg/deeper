@@ -43,6 +43,8 @@ Architecture and performance-tuning details live in [`docs/`](docs/) — this RE
 
 Deeper is built for legitimate OSINT research and authorized security testing. Make sure you have proper authorization before pointing it at any person, system, or organization you don't own.
 
+By default a scan is **passive** — it only queries third-party sources (certificate logs, WHOIS, DNS, code-host APIs, archives) and never touches the target directly. Active-recon plugins that do contact the target — a TCP port scan, directory brute-forcing — run only when you pass `--active` (or set `DEEPER_ACTIVE_SCAN=true`). Use them only where your authorization covers active probing.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
