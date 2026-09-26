@@ -4,17 +4,9 @@ import (
 	"context"
 	"net"
 
-	"github.com/rs/zerolog/log"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
-	"github.com/smirnoffmg/deeper/internal/pkg/state"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 )
-
-func init() {
-	p := NewPlugin()
-	if err := p.Register(); err != nil {
-		log.Error().Err(err).Msgf("Failed to register plugin %s", p)
-	}
-}
 
 type IPIntelPlugin struct {
 	txt  txtLookup
@@ -29,17 +21,15 @@ func NewPlugin() *IPIntelPlugin {
 	}
 }
 
-func (p *IPIntelPlugin) Register() error {
-	state.RegisterPlugin(entities.IpAddr, p)
+func (p *IPIntelPlugin) Register(r plugins.Registry) error {
+	r.Add(entities.IpAddr, p)
 	return nil
 }
 
-func (p *IPIntelPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
+func (p *IPIntelPlugin) FollowTrace(ctx context.Context, trace entities.Trace) ([]entities.Trace, error) {
 	if trace.Type != entities.IpAddr {
 		return nil, nil
 	}
-
-	ctx := context.Background()
 
 	var traces []entities.Trace
 	traces = append(traces, lookupASN(ctx, trace.Value, p.txt)...)

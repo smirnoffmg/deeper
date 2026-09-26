@@ -215,8 +215,8 @@ func TestGenerateTaskID_StableAcrossPluginPointerInstances(t *testing.T) {
 
 	// Two distinct Plugin pointer values simulate two separate process
 	// runs allocating the plugin singleton at different heap addresses.
-	pluginInstanceA := &struct{ n int }{n: 1}
-	pluginInstanceB := &struct{ n int }{n: 2}
+	pluginInstanceA := &stubPlugin{n: 1}
+	pluginInstanceB := &stubPlugin{n: 2}
 
 	task1 := &Task{Payload: &tasks.TraceProcessingTask{
 		Trace:     entities.Trace{Value: "codescoring.ru", Type: entities.Domain},
@@ -419,3 +419,11 @@ func TestLRUCache_Clear(t *testing.T) {
 	metrics := lru.GetMetrics()
 	assert.Equal(t, int64(0), metrics.Size)
 }
+
+type stubPlugin struct{ n int }
+
+func (*stubPlugin) FollowTrace(context.Context, entities.Trace) ([]entities.Trace, error) {
+	return nil, nil
+}
+
+func (*stubPlugin) String() string { return "stub" }

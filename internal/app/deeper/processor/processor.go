@@ -13,7 +13,6 @@ import (
 	"github.com/smirnoffmg/deeper/internal/pkg/errors"
 	"github.com/smirnoffmg/deeper/internal/pkg/metrics"
 	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
-	"github.com/smirnoffmg/deeper/internal/pkg/state"
 	"github.com/smirnoffmg/deeper/internal/pkg/workerpool"
 	"golang.org/x/time/rate"
 )
@@ -21,6 +20,7 @@ import (
 // Processor handles trace processing through plugins
 type Processor struct {
 	config     *config.Config
+	registry   plugins.Registry
 	metrics    *metrics.MetricsCollector
 	repo       *database.Repository
 	cache      *database.Cache
@@ -28,7 +28,7 @@ type Processor struct {
 }
 
 // NewProcessor creates a new trace processor
-func NewProcessor(cfg *config.Config, metricsCollector *metrics.MetricsCollector, repo *database.Repository, cache *database.Cache) *Processor {
+func NewProcessor(cfg *config.Config, registry plugins.Registry, metricsCollector *metrics.MetricsCollector, repo *database.Repository, cache *database.Cache) *Processor {
 	// Create worker pool configuration
 	wpConfig := &workerpool.Config{
 		MaxWorkers:          cfg.WorkerPoolConfig.MaxWorkers,
@@ -65,6 +65,7 @@ func NewProcessor(cfg *config.Config, metricsCollector *metrics.MetricsCollector
 
 	return &Processor{
 		config:     cfg,
+		registry:   registry,
 		metrics:    metricsCollector,
 		repo:       repo,
 		cache:      cache,
@@ -76,8 +77,8 @@ func NewProcessor(cfg *config.Config, metricsCollector *metrics.MetricsCollector
 func (p *Processor) ProcessTrace(ctx context.Context, trace entities.Trace) ([]entities.Discovery, error) {
 	startTime := time.Now()
 
-	candidatePlugins, exists := state.ActivePlugins[trace.Type]
-	if !exists || len(candidatePlugins) == 0 {
+	candidatePlugins := p.registry[trace.Type]
+	if len(candidatePlugins) == 0 {
 		log.Debug().Msgf("No plugins found for trace type %s", trace.Type)
 		// Record metrics for skipped trace
 		p.metrics.RecordTraceTypeMetrics(trace.Type, false, 0, time.Since(startTime))
@@ -97,16 +98,6 @@ func (p *Processor) ProcessTrace(ctx context.Context, trace entities.Trace) ([]e
 	// Submit tasks to worker pool
 	submittedTasks := 0
 	for _, plugin := range candidatePlugins {
-		pluginInterface, ok := plugin.(interface {
-			FollowTrace(trace entities.Trace) ([]entities.Trace, error)
-			String() string
-		})
-		if !ok {
-			log.Error().Msgf("Plugin does not implement required interface")
-			allErrors = append(allErrors, errors.NewPluginError("invalid plugin interface", nil))
-			continue
-		}
-
 		// Plugins that opt into TraceMatcher get to skip submission -- and
 		// the domain rate-limit wait bundled into Submit() -- entirely for
 		// traces they'd immediately no-op on. Plugins that don't implement
@@ -117,11 +108,14 @@ func (p *Processor) ProcessTrace(ctx context.Context, trace entities.Trace) ([]e
 
 		// Create task for this plugin
 		task := &workerpool.Task{
-			ID: trace.Value + ":" + pluginInterface.String(),
+			ID: trace.Value + ":" + plugin.String(),
+			// One plugin is one integration point, so its failures across
+			// all traces must accumulate in one breaker.
+			BreakerKey: plugin.String(),
 			Payload: &tasks.TraceProcessingTask{
 				Trace:     trace,
-				PluginKey: pluginInterface.String(),
-				Plugin:    pluginInterface,
+				PluginKey: plugin.String(),
+				Plugin:    plugin,
 			},
 			ReplyTo: replyTo,
 		}
@@ -129,7 +123,7 @@ func (p *Processor) ProcessTrace(ctx context.Context, trace entities.Trace) ([]e
 		// Submit task to worker pool
 		err := p.workerPool.Submit(ctx, task)
 		if err != nil {
-			log.Error().Err(err).Msgf("Failed to submit task for plugin %s", pluginInterface.String())
+			log.Error().Err(err).Msgf("Failed to submit task for plugin %s", plugin.String())
 			allErrors = append(allErrors, err)
 			continue
 		}
@@ -247,16 +241,15 @@ func newTraceTaskHandler(metricsCollector *metrics.MetricsCollector) workerpool.
 			return nil, errors.NewPluginError("invalid task payload", nil)
 		}
 
-		pluginInterface, ok := taskPayload.Plugin.(interface {
-			FollowTrace(trace entities.Trace) ([]entities.Trace, error)
-			String() string
-		})
-		if !ok {
-			return nil, errors.NewPluginError("invalid plugin interface", nil)
-		}
+		pluginInterface := taskPayload.Plugin
 
 		pluginStartTime := time.Now()
-		newTraces, err := pluginInterface.FollowTrace(taskPayload.Trace)
+		newTraces, err := pluginInterface.FollowTrace(ctx, taskPayload.Trace)
+		// Plugins tend to log-and-skip their own I/O errors, so a deadline hit
+		// would otherwise look like success and never reach the breaker.
+		if err == nil {
+			err = ctx.Err()
+		}
 		metricsCollector.RecordPluginExecution(pluginInterface.String(), time.Since(pluginStartTime), err == nil)
 
 		if err != nil {

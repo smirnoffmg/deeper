@@ -1,14 +1,16 @@
 package subdomains
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/smirnoffmg/deeper/internal/pkg/config"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
-	"github.com/smirnoffmg/deeper/internal/pkg/state"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -62,7 +64,7 @@ type fakeHostSearchFetcher struct {
 	lastURL string
 }
 
-func (f *fakeHostSearchFetcher) Get(url string) (*http.Response, error) {
+func (f *fakeHostSearchFetcher) Get(_ context.Context, url string) (*http.Response, error) {
 	f.lastURL = url
 	if f.err != nil {
 		return nil, f.err
@@ -73,7 +75,7 @@ func (f *fakeHostSearchFetcher) Get(url string) (*http.Response, error) {
 func TestSubdomainPlugin_FollowTrace_WrongType(t *testing.T) {
 	p := &SubdomainPlugin{fetcher: &fakeHostSearchFetcher{}}
 
-	traces, err := p.FollowTrace(entities.Trace{Value: "x", Type: entities.Email})
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{Value: "x", Type: entities.Email})
 	require.NoError(t, err)
 	assert.Empty(t, traces)
 }
@@ -82,7 +84,7 @@ func TestSubdomainPlugin_FollowTrace_ParsesResponse(t *testing.T) {
 	fetcher := &fakeHostSearchFetcher{body: "sub.example.com,192.168.1.1"}
 	p := &SubdomainPlugin{fetcher: fetcher}
 
-	traces, err := p.FollowTrace(entities.Trace{Value: "example.com", Type: entities.Domain})
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{Value: "example.com", Type: entities.Domain})
 	require.NoError(t, err)
 	require.Len(t, traces, 2)
 	assert.Equal(t, "https://api.hackertarget.com/hostsearch/?q=example.com", fetcher.lastURL)
@@ -91,16 +93,17 @@ func TestSubdomainPlugin_FollowTrace_ParsesResponse(t *testing.T) {
 func TestSubdomainPlugin_FollowTrace_RequestError(t *testing.T) {
 	p := &SubdomainPlugin{fetcher: &fakeHostSearchFetcher{err: errors.New("network error")}}
 
-	_, err := p.FollowTrace(entities.Trace{Value: "example.com", Type: entities.Domain})
+	_, err := p.FollowTrace(context.Background(), entities.Trace{Value: "example.com", Type: entities.Domain})
 	assert.Error(t, err)
 }
 
 func TestRegister_RegistersUnderDomainOnly(t *testing.T) {
-	p := NewPlugin()
-	require.NoError(t, p.Register())
+	p := NewPlugin(config.DefaultConfig())
+	registry := plugins.Registry{}
+	require.NoError(t, p.Register(registry))
 
 	found := false
-	for _, registered := range state.ActivePlugins[entities.Domain] {
+	for _, registered := range registry[entities.Domain] {
 		if registered == p {
 			found = true
 		}

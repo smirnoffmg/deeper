@@ -3,38 +3,30 @@ package companyregistry
 import (
 	"context"
 
-	"github.com/rs/zerolog/log"
 	"github.com/smirnoffmg/deeper/internal/pkg/config"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 	deeperhttp "github.com/smirnoffmg/deeper/internal/pkg/http"
-	"github.com/smirnoffmg/deeper/internal/pkg/state"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 )
-
-func init() {
-	p := NewPlugin()
-	if err := p.Register(); err != nil {
-		log.Error().Err(err).Msgf("Failed to register plugin %s", p)
-	}
-}
 
 type CompanyRegistryPlugin struct {
 	fetcher searchFetcher
 }
 
-func NewPlugin() *CompanyRegistryPlugin {
-	return &CompanyRegistryPlugin{fetcher: deeperhttp.NewClient(config.LoadConfig())}
+func NewPlugin(cfg *config.Config) *CompanyRegistryPlugin {
+	return &CompanyRegistryPlugin{fetcher: deeperhttp.NewClient(cfg)}
 }
 
-func (p *CompanyRegistryPlugin) Register() error {
-	state.RegisterPlugin(entities.Company, p)
+func (p *CompanyRegistryPlugin) Register(r plugins.Registry) error {
+	r.Add(entities.Company, p)
 	return nil
 }
 
-func (p *CompanyRegistryPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
+func (p *CompanyRegistryPlugin) FollowTrace(ctx context.Context, trace entities.Trace) ([]entities.Trace, error) {
 	if trace.Type != entities.Company {
 		return nil, nil
 	}
-	return searchCompany(context.Background(), p.fetcher, trace.Value)
+	return searchCompany(ctx, p.fetcher, trace.Value)
 }
 
 func (p CompanyRegistryPlugin) String() string {

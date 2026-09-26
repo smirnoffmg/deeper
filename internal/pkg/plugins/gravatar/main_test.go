@@ -1,6 +1,7 @@
 package gravatar
 
 import (
+	"context"
 	"net/http"
 	"testing"
 
@@ -11,7 +12,7 @@ import (
 
 func TestFollowTrace_WrongType(t *testing.T) {
 	p := testPlugin(&fakeProfileFetcher{})
-	traces, err := p.FollowTrace(entities.Trace{Type: entities.Domain, Value: "example.com"})
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Domain, Value: "example.com"})
 	require.NoError(t, err)
 	assert.Nil(t, traces)
 }
@@ -26,7 +27,7 @@ func TestFollowTrace_ProfileFound(t *testing.T) {
 	}
 
 	p := testPlugin(fetcher)
-	traces, err := p.FollowTrace(entities.Trace{Type: entities.Email, Value: "jane@example.com"})
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Email, Value: "jane@example.com"})
 	require.NoError(t, err)
 	require.NotEmpty(t, traces)
 	assert.Equal(t, entities.Name, traces[0].Type)
@@ -42,7 +43,7 @@ func TestFollowTrace_ProfileNotFound(t *testing.T) {
 	}
 
 	p := testPlugin(fetcher)
-	traces, err := p.FollowTrace(entities.Trace{Type: entities.Email, Value: "nobody@example.com"})
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Email, Value: "nobody@example.com"})
 	require.NoError(t, err)
 	assert.Nil(t, traces)
 }
@@ -57,7 +58,7 @@ func TestFollowTrace_SetsAuthorizationWhenAPIKeyPresent(t *testing.T) {
 	}
 
 	p := &GravatarPlugin{fetcher: fetcher, apiKey: "secret-key"}
-	_, err := p.FollowTrace(entities.Trace{Type: entities.Email, Value: "jane@example.com"})
+	_, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Email, Value: "jane@example.com"})
 	require.NoError(t, err)
 	require.NotNil(t, fetcher.lastReq)
 	assert.Equal(t, "Bearer secret-key", fetcher.lastReq.Header.Get("Authorization"))

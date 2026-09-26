@@ -8,6 +8,7 @@ import (
 	"github.com/smirnoffmg/deeper/internal/pkg/config"
 	"github.com/smirnoffmg/deeper/internal/pkg/database"
 	"github.com/smirnoffmg/deeper/internal/pkg/metrics"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 	"github.com/spf13/cobra"
 )
 
@@ -56,7 +57,7 @@ func runRateLimit(cmd *cobra.Command, args []string) error {
 	metricsCollector := metrics.NewMetricsCollector()
 	repo := database.NewRepository(db)
 	cache := database.NewCache(repo)
-	proc := processor.NewProcessor(cfg, metricsCollector, repo, cache)
+	proc := processor.NewProcessor(cfg, plugins.Registry{}, metricsCollector, repo, cache)
 
 	if rateLimitList {
 		return listDomainRateLimits(proc)

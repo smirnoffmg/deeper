@@ -1,6 +1,7 @@
 package social_profiles
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -67,10 +68,10 @@ func decideExistence(entry SherlockEntry, status int, body []byte) bool {
 	}
 }
 
-func (e SherlockEntry) CheckUrl(username string) bool {
+func (e SherlockEntry) CheckUrl(ctx context.Context, username string) bool {
 	url := e.BuildUrl(username)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return false
 	}

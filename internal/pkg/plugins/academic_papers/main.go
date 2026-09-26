@@ -3,40 +3,32 @@ package academicpapers
 import (
 	"context"
 
-	"github.com/rs/zerolog/log"
 	"github.com/smirnoffmg/deeper/internal/pkg/config"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 	deeperhttp "github.com/smirnoffmg/deeper/internal/pkg/http"
-	"github.com/smirnoffmg/deeper/internal/pkg/state"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 )
-
-func init() {
-	p := NewPlugin()
-	if err := p.Register(); err != nil {
-		log.Error().Err(err).Msgf("Failed to register plugin %s", p)
-	}
-}
 
 type AcademicPapersPlugin struct {
 	fetcher searchFetcher
 }
 
-func NewPlugin() *AcademicPapersPlugin {
-	return &AcademicPapersPlugin{fetcher: deeperhttp.NewClient(config.LoadConfig())}
+func NewPlugin(cfg *config.Config) *AcademicPapersPlugin {
+	return &AcademicPapersPlugin{fetcher: deeperhttp.NewClient(cfg)}
 }
 
-func (g *AcademicPapersPlugin) Register() error {
-	state.RegisterPlugin(entities.Username, g)
-	state.RegisterPlugin(entities.Name, g)
+func (g *AcademicPapersPlugin) Register(r plugins.Registry) error {
+	r.Add(entities.Username, g)
+	r.Add(entities.Name, g)
 	return nil
 }
 
-func (g *AcademicPapersPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
+func (g *AcademicPapersPlugin) FollowTrace(ctx context.Context, trace entities.Trace) ([]entities.Trace, error) {
 	if trace.Type != entities.Username && trace.Type != entities.Name {
 		return nil, nil
 	}
 
-	urls, err := searchAuthorPapers(context.Background(), g.fetcher, trace.Value)
+	urls, err := searchAuthorPapers(ctx, g.fetcher, trace.Value)
 	if err != nil {
 		return nil, err
 	}

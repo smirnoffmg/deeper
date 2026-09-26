@@ -3,40 +3,31 @@ package github_identity
 import (
 	"context"
 
-	"github.com/rs/zerolog/log"
 	"github.com/smirnoffmg/deeper/internal/pkg/config"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 	deeperhttp "github.com/smirnoffmg/deeper/internal/pkg/http"
-	"github.com/smirnoffmg/deeper/internal/pkg/state"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 )
-
-func init() {
-	p := NewPlugin()
-	if err := p.Register(); err != nil {
-		log.Error().Err(err).Msgf("Failed to register plugin %s", p)
-	}
-}
 
 type GitHubIdentityPlugin struct {
 	fetcher commitFetcher
 	token   string
 }
 
-func NewPlugin() *GitHubIdentityPlugin {
-	cfg := config.LoadConfig()
+func NewPlugin(cfg *config.Config) *GitHubIdentityPlugin {
 	return &GitHubIdentityPlugin{
 		fetcher: deeperhttp.NewClient(cfg),
 		token:   cfg.GitHubToken,
 	}
 }
 
-func (p *GitHubIdentityPlugin) Register() error {
-	state.RegisterPlugin(entities.Github, p)
-	state.RegisterPlugin(entities.Repository, p)
+func (p *GitHubIdentityPlugin) Register(r plugins.Registry) error {
+	r.Add(entities.Github, p)
+	r.Add(entities.Repository, p)
 	return nil
 }
 
-func (p *GitHubIdentityPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
+func (p *GitHubIdentityPlugin) FollowTrace(ctx context.Context, trace entities.Trace) ([]entities.Trace, error) {
 	if trace.Type != entities.Github && trace.Type != entities.Repository {
 		return nil, nil
 	}
@@ -45,8 +36,6 @@ func (p *GitHubIdentityPlugin) FollowTrace(trace entities.Trace) ([]entities.Tra
 	if !ok {
 		return nil, nil
 	}
-
-	ctx := context.Background()
 
 	if isFork(ctx, p.fetcher, owner, repo, p.token) {
 		return nil, nil

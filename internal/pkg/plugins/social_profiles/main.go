@@ -1,25 +1,20 @@
 package social_profiles
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/rs/zerolog/log"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
-	"github.com/smirnoffmg/deeper/internal/pkg/state"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 )
 
 const InputTraceType = entities.Username
-
-func init() {
-	p := NewSocialProfilesPlugin()
-	if err := p.Register(); err != nil {
-		log.Error().Err(err).Msgf("Failed to register plugin %s", p)
-	}
-}
 
 type SherlockEntry struct {
 	Url       string   `json:"url"`
@@ -72,12 +67,14 @@ const maxConcurrentChecks = 30
 
 type SocialProfilesPlugin struct {
 	entries map[string]SherlockEntry
-	checkFn func(entry SherlockEntry, username string) bool
+	checkFn func(ctx context.Context, entry SherlockEntry, username string) bool
 }
 
 func NewSocialProfilesPlugin() *SocialProfilesPlugin {
 	return &SocialProfilesPlugin{
-		checkFn: func(entry SherlockEntry, username string) bool { return entry.CheckUrl(username) },
+		checkFn: func(ctx context.Context, entry SherlockEntry, username string) bool {
+			return entry.CheckUrl(ctx, username)
+		},
 	}
 }
 
@@ -101,11 +98,11 @@ func parseSherlockData(data []byte) (map[string]SherlockEntry, error) {
 	return entries, nil
 }
 
-func (g *SocialProfilesPlugin) Register() error {
+func (g *SocialProfilesPlugin) Register(r plugins.Registry) error {
 	// get latest data from sherlock
 	jsonFileUrl := "https://raw.githubusercontent.com/sherlock-project/sherlock/master/sherlock_project/resources/data.json"
 
-	resp, err := http.Get(jsonFileUrl)
+	resp, err := (&http.Client{Timeout: 30 * time.Second}).Get(jsonFileUrl)
 
 	if err != nil {
 		return err
@@ -129,11 +126,11 @@ func (g *SocialProfilesPlugin) Register() error {
 	g.entries = sherlockEntries
 	// Register the plugin
 
-	state.RegisterPlugin(InputTraceType, g)
+	r.Add(InputTraceType, g)
 	return nil
 }
 
-func (g *SocialProfilesPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
+func (g *SocialProfilesPlugin) FollowTrace(ctx context.Context, trace entities.Trace) ([]entities.Trace, error) {
 	if trace.Type != InputTraceType {
 		return nil, nil
 	}
@@ -145,15 +142,20 @@ func (g *SocialProfilesPlugin) FollowTrace(trace entities.Trace) ([]entities.Tra
 		sem       = make(chan struct{}, maxConcurrentChecks)
 	)
 
+entries:
 	for _, entry := range g.entries {
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			break entries
+		}
 		wg.Add(1)
-		sem <- struct{}{}
 
 		go func(entry SherlockEntry) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			if g.checkFn(entry, trace.Value) {
+			if g.checkFn(ctx, entry, trace.Value) {
 				mu.Lock()
 				newTraces = append(newTraces, entities.Trace{
 					Value: entry.BuildUrl(trace.Value),

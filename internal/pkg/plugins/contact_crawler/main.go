@@ -3,48 +3,40 @@ package contact_crawler
 import (
 	"context"
 
-	"github.com/rs/zerolog/log"
 	"github.com/smirnoffmg/deeper/internal/pkg/config"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 	deeperhttp "github.com/smirnoffmg/deeper/internal/pkg/http"
-	"github.com/smirnoffmg/deeper/internal/pkg/state"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 )
 
 const maxPagesPerRegistrableDomainPerProcess = 60
-
-func init() {
-	p := NewPlugin()
-	if err := p.Register(); err != nil {
-		log.Error().Err(err).Msgf("Failed to register plugin %s", p)
-	}
-}
 
 type ContactCrawlerPlugin struct {
 	fetcher      pageFetcher
 	domainBudget *domainBudget
 }
 
-func NewPlugin() *ContactCrawlerPlugin {
+func NewPlugin(cfg *config.Config) *ContactCrawlerPlugin {
 	return &ContactCrawlerPlugin{
-		fetcher:      deeperhttp.NewClient(config.LoadConfig()),
+		fetcher:      deeperhttp.NewClient(cfg),
 		domainBudget: newDomainBudget(maxPagesPerRegistrableDomainPerProcess),
 	}
 }
 
-func (p *ContactCrawlerPlugin) Register() error {
-	state.RegisterPlugin(entities.Domain, p)
-	state.RegisterPlugin(entities.Subdomain, p)
+func (p *ContactCrawlerPlugin) Register(r plugins.Registry) error {
+	r.Add(entities.Domain, p)
+	r.Add(entities.Subdomain, p)
 	return nil
 }
 
-func (p *ContactCrawlerPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
+func (p *ContactCrawlerPlugin) FollowTrace(ctx context.Context, trace entities.Trace) ([]entities.Trace, error) {
 	if trace.Type != entities.Domain && trace.Type != entities.Subdomain {
 		return nil, nil
 	}
 
 	seedURL := normalizeURL(trace.Value)
 	c := newCrawler(p.fetcher, trace.Value, p.domainBudget)
-	return c.crawl(context.Background(), seedURL)
+	return c.crawl(ctx, seedURL)
 }
 
 func (p *ContactCrawlerPlugin) String() string {

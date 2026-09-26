@@ -1,46 +1,37 @@
 package crtsh
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 
+	"github.com/smirnoffmg/deeper/internal/pkg/config"
+	deeperhttp "github.com/smirnoffmg/deeper/internal/pkg/http"
+
 	"github.com/rs/zerolog/log"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
-	"github.com/smirnoffmg/deeper/internal/pkg/state"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 )
 
 const InputTraceType = entities.Domain
 
-func init() {
-	p := NewPlugin()
-	if err := p.Register(); err != nil {
-		log.Error().Err(err).Msgf("Failed to register plugin %s", p)
-	}
-}
-
 type certFetcher interface {
-	Get(url string) (*http.Response, error)
-}
-
-type httpCertFetcher struct{}
-
-func (httpCertFetcher) Get(url string) (*http.Response, error) {
-	return http.Get(url)
+	Get(ctx context.Context, url string) (*http.Response, error)
 }
 
 type SubdomainPlugin struct {
 	fetcher certFetcher
 }
 
-func NewPlugin() *SubdomainPlugin {
-	return &SubdomainPlugin{fetcher: httpCertFetcher{}}
+func NewPlugin(cfg *config.Config) *SubdomainPlugin {
+	return &SubdomainPlugin{fetcher: deeperhttp.NewClient(cfg)}
 }
 
-func (g *SubdomainPlugin) Register() error {
-	state.RegisterPlugin(InputTraceType, g)
+func (g *SubdomainPlugin) Register(r plugins.Registry) error {
+	r.Add(InputTraceType, g)
 	return nil
 }
 
@@ -48,13 +39,13 @@ type CrtShEntry struct {
 	NameValue string `json:"name_value"`
 }
 
-func (g *SubdomainPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
+func (g *SubdomainPlugin) FollowTrace(ctx context.Context, trace entities.Trace) ([]entities.Trace, error) {
 	if trace.Type != InputTraceType {
 		return nil, nil
 	}
 
 	url := fmt.Sprintf("https://crt.sh/?q=%%25.%s&output=json", trace.Value)
-	resp, err := g.fetcher.Get(url)
+	resp, err := g.fetcher.Get(ctx, url)
 	if err != nil {
 		log.Warn().Err(err).Str("domain", trace.Value).Msg("crt.sh request failed, skipping")
 		return nil, nil

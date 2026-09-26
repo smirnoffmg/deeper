@@ -13,6 +13,7 @@ import (
 	"github.com/smirnoffmg/deeper/internal/pkg/database"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 	"github.com/smirnoffmg/deeper/internal/pkg/metrics"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 )
 
 // Engine orchestrates the trace processing workflow
@@ -24,10 +25,10 @@ type Engine struct {
 }
 
 // NewEngine creates a new trace processing engine
-func NewEngine(cfg *config.Config, metricsCollector *metrics.MetricsCollector, repo *database.Repository, cache *database.Cache) *Engine {
+func NewEngine(cfg *config.Config, registry plugins.Registry, metricsCollector *metrics.MetricsCollector, repo *database.Repository, cache *database.Cache) *Engine {
 	return &Engine{
 		config:    cfg,
-		processor: processor.NewProcessor(cfg, metricsCollector, repo, cache),
+		processor: processor.NewProcessor(cfg, registry, metricsCollector, repo, cache),
 		metrics:   metricsCollector,
 		repo:      repo,
 	}
@@ -55,7 +56,7 @@ func (e *Engine) ProcessInput(ctx context.Context, input string, scanID int64) (
 		return nil, fmt.Errorf("failed to persist seed edge: %w", err)
 	}
 
-	stack := []entities.Trace{initialTrace}
+	queue := []entities.Trace{initialTrace}
 	// The seed is marked seen and included in results up front: previously
 	// it was excluded from allTraces entirely (only plugin-discovered
 	// children were ever appended), so a scan's own starting point never
@@ -67,19 +68,13 @@ func (e *Engine) ProcessInput(ctx context.Context, input string, scanID int64) (
 	allTraces := []entities.Trace{initialTrace}
 
 	var processedCount int
-	var errorCount int
 
-	for len(stack) > 0 {
-		batchSize := min(len(stack), e.config.MaxConcurrency)
-		batch := stack[:batchSize]
-		stack = stack[batchSize:]
+	for len(queue) > 0 {
+		batchSize := min(len(queue), max(e.config.MaxConcurrency, 1))
+		batch := queue[:batchSize]
+		queue = queue[batchSize:]
 
-		discoveries, err := e.processBatch(ctx, batch)
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to process batch")
-			errorCount++
-			continue
-		}
+		discoveries := e.processBatch(ctx, batch)
 
 		if err := e.repo.PersistDiscoveries(scanID, discoveries); err != nil {
 			return nil, fmt.Errorf("failed to persist discoveries: %w", err)
@@ -89,21 +84,23 @@ func (e *Engine) ProcessInput(ctx context.Context, input string, scanID int64) (
 			if !seen[d.Child] {
 				seen[d.Child] = true
 				allTraces = append(allTraces, d.Child)
-				stack = append(stack, d.Child)
+				queue = append(queue, d.Child)
 			}
 		}
 
 		processedCount += len(batch)
 	}
 
-	log.Info().Msgf("Processing complete. Processed %d traces, found %d unique traces, %d errors",
-		processedCount, len(allTraces), errorCount)
+	log.Info().Msgf("Processing complete. Processed %d traces, found %d unique traces",
+		processedCount, len(allTraces))
 
 	return allTraces, nil
 }
 
-// processBatch processes a batch of traces concurrently, bounded by MaxConcurrency
-func (e *Engine) processBatch(ctx context.Context, traces []entities.Trace) ([]entities.Discovery, error) {
+// processBatch processes a batch of traces concurrently, bounded by
+// MaxConcurrency. A trace that fails is logged and skipped so the rest of the
+// batch still contributes to the graph.
+func (e *Engine) processBatch(ctx context.Context, traces []entities.Trace) []entities.Discovery {
 	var (
 		allResults []entities.Discovery
 		errors     []error
@@ -143,14 +140,7 @@ func (e *Engine) processBatch(ctx context.Context, traces []entities.Trace) ([]e
 		log.Warn().Msgf("Encountered %d errors in batch processing", len(errors))
 	}
 
-	return allResults, nil
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
+	return allResults
 }
 
 // Shutdown gracefully shuts down the engine and its processor

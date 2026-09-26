@@ -7,8 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/smirnoffmg/deeper/internal/pkg/config"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
-	"github.com/smirnoffmg/deeper/internal/pkg/state"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -73,7 +74,7 @@ func TestFetchCommitAuthors_MalformedJSON(t *testing.T) {
 
 func TestFollowTrace_WrongType(t *testing.T) {
 	p := testPlugin(&fakeCommitFetcher{})
-	traces, err := p.FollowTrace(entities.Trace{Type: entities.Domain, Value: "example.com"})
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Domain, Value: "example.com"})
 	require.NoError(t, err)
 	assert.Nil(t, traces)
 }
@@ -85,7 +86,7 @@ func TestFollowTrace_ValidRepo(t *testing.T) {
 	}
 	p := testPlugin(fetcher)
 
-	traces, err := p.FollowTrace(entities.Trace{
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{
 		Type:  entities.Github,
 		Value: "https://github.com/CodeScoring/awesome-open-source-licensing",
 	})
@@ -108,7 +109,7 @@ func TestFollowTrace_RepositoryTraceTypeIsFollowed(t *testing.T) {
 	}
 	p := testPlugin(fetcher)
 
-	traces, err := p.FollowTrace(entities.Trace{
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{
 		Type:  entities.Repository,
 		Value: "https://github.com/alsmirn/gyt",
 	})
@@ -119,7 +120,7 @@ func TestFollowTrace_RepositoryTraceTypeIsFollowed(t *testing.T) {
 func TestFollowTrace_GitLabRepositoryTraceIsSkipped(t *testing.T) {
 	p := testPlugin(&fakeCommitFetcher{})
 
-	traces, err := p.FollowTrace(entities.Trace{
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{
 		Type:  entities.Repository,
 		Value: "https://gitlab.com/owner/repo",
 	})
@@ -139,7 +140,7 @@ func TestFollowTrace_SharedRepoOnlyReturnsOwnerTraces(t *testing.T) {
 	fetcher := &fakeCommitFetcher{status: http.StatusOK, body: sharedRepoCommits}
 	p := testPlugin(fetcher)
 
-	traces, err := p.FollowTrace(entities.Trace{
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{
 		Type:  entities.Repository,
 		Value: "https://github.com/iloncka/workshop-astra-tik-tok",
 	})
@@ -168,7 +169,7 @@ func TestFollowTrace_ForkedRepoIsSkipped(t *testing.T) {
 	}
 	p := testPlugin(fetcher)
 
-	traces, err := p.FollowTrace(entities.Trace{
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{
 		Type:  entities.Repository,
 		Value: "https://github.com/alsmirn/youtube-dl",
 	})
@@ -179,7 +180,7 @@ func TestFollowTrace_ForkedRepoIsSkipped(t *testing.T) {
 
 func TestFollowTrace_OrgRootRejected(t *testing.T) {
 	p := testPlugin(&fakeCommitFetcher{})
-	traces, err := p.FollowTrace(entities.Trace{
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{
 		Type:  entities.Github,
 		Value: "https://github.com/acme",
 	})
@@ -194,7 +195,7 @@ func TestFollowTrace_SetsAuthorizationWhenTokenPresent(t *testing.T) {
 	}
 	p := &GitHubIdentityPlugin{fetcher: fetcher, token: "ghp_secret"}
 
-	_, err := p.FollowTrace(entities.Trace{
+	_, err := p.FollowTrace(context.Background(), entities.Trace{
 		Type:  entities.Github,
 		Value: "https://github.com/owner/repo",
 	})
@@ -210,7 +211,7 @@ func TestFollowTrace_NoAuthorizationWhenTokenAbsent(t *testing.T) {
 	}
 	p := testPlugin(fetcher)
 
-	_, err := p.FollowTrace(entities.Trace{
+	_, err := p.FollowTrace(context.Background(), entities.Trace{
 		Type:  entities.Github,
 		Value: "https://github.com/owner/repo",
 	})
@@ -225,12 +226,13 @@ func TestString(t *testing.T) {
 }
 
 func TestRegister_RegistersUnderGithubAndRepository(t *testing.T) {
-	p := NewPlugin()
-	require.NoError(t, p.Register())
+	p := NewPlugin(config.DefaultConfig())
+	registry := plugins.Registry{}
+	require.NoError(t, p.Register(registry))
 
 	for _, traceType := range []entities.TraceType{entities.Github, entities.Repository} {
 		found := false
-		for _, registered := range state.ActivePlugins[traceType] {
+		for _, registered := range registry[traceType] {
 			if registered == p {
 				found = true
 			}

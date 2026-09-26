@@ -23,8 +23,7 @@ package "entities" {
 
 package "plugins" {
     interface DeeperPlugin {
-        +Register(): error
-        +FollowTrace(trace: Trace): (Trace[], error)
+        +FollowTrace(ctx: Context, trace: Trace): (Trace[], error)
         +String(): string
     }
 
@@ -58,16 +57,20 @@ package "plugins" {
     KeybaseProfilePlugin ..|> TraceMatcher
 }
 
-package "state" {
-    class ActivePluginsRegistry {
-        +ActivePlugins: map<TraceType, DeeperPlugin[]>
-        +RegisterPlugin(traceType, plugin)
+package "plugins" {
+    class Registry {
+        map<TraceType, DeeperPlugin[]>
+        +Add(traceType, plugin)
     }
+}
+
+package "catalog" {
+    class "catalog.New(cfg)" as CatalogNew
 }
 
 package "engine" {
     class Engine {
-        -stack: Trace[]
+        -queue: Trace[]
         -seen: set<Trace>
         +ProcessInput(seed: Trace)
         -processBatch(traces: Trace[])
@@ -99,7 +102,8 @@ package "database" {
 }
 
 Engine --> Processor : processBatch()\n(bounded by MaxConcurrency)
-Processor --> ActivePluginsRegistry : lookup plugins for trace.Type
+CatalogNew --> Registry : builds every plugin from config
+Processor --> Registry : lookup plugins for trace.Type
 Processor ..> TraceMatcher : skip submission if Matches() == false
 Processor --> WorkerPool : Submit() one task per matching plugin
 WorkerPool --> DeeperPlugin : FollowTrace()

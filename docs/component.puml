@@ -12,12 +12,12 @@ package "Deeper" {
 
     [Worker Pool] --> [Domain Rate Limiter]
     [Worker Pool] --> [Deduplication Cache]
-    [Worker Pool] --> [Circuit Breaker]
+    [Worker Pool] --> [Circuit Breaker] : one per plugin
     [Worker Pool] --> [Plugins]
 
     [Deduplication Cache] --> [Database (SQLite)] : cross-run markers
 
-    [Plugins] ..> [Plugin Registry] : self-register via init()
+    [Plugin Catalog] --> [Plugins] : builds from config,\nregisters into Registry
     [Plugins] --> [Shared HTTP Client]
     [Shared HTTP Client] --> [External Services]
 }

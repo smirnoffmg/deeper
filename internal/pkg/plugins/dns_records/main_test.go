@@ -1,8 +1,10 @@
 package dns_records
 
 import (
+	"context"
 	"testing"
 
+	"github.com/smirnoffmg/deeper/internal/pkg/config"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -11,7 +13,7 @@ import (
 func TestDNSRecordsPlugin_FollowTrace_WrongType(t *testing.T) {
 	plugin := &DNSRecordsPlugin{doh: &fakeDoHFetcher{}}
 
-	traces, err := plugin.FollowTrace(entities.Trace{Value: "1.2.3.4", Type: entities.IpAddr})
+	traces, err := plugin.FollowTrace(context.Background(), entities.Trace{Value: "1.2.3.4", Type: entities.IpAddr})
 
 	require.NoError(t, err)
 	assert.Empty(t, traces)
@@ -26,7 +28,7 @@ func TestDNSRecordsPlugin_FollowTrace_SkipsWildcard(t *testing.T) {
 		},
 	}
 
-	traces, err := plugin.FollowTrace(entities.Trace{Value: "*.example.com", Type: entities.Domain})
+	traces, err := plugin.FollowTrace(context.Background(), entities.Trace{Value: "*.example.com", Type: entities.Domain})
 
 	require.NoError(t, err)
 	assert.Empty(t, traces)
@@ -61,7 +63,7 @@ func TestDNSRecordsPlugin_FollowTrace_AllRecordTypes(t *testing.T) {
 		},
 	}
 
-	traces, err := plugin.FollowTrace(entities.Trace{Value: domain, Type: entities.Domain})
+	traces, err := plugin.FollowTrace(context.Background(), entities.Trace{Value: domain, Type: entities.Domain})
 
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(traces), 6)
@@ -105,7 +107,7 @@ func TestDNSRecordsPlugin_FollowTrace_PartialDoHFailureStillReturnsOthers(t *tes
 		},
 	}
 
-	traces, err := plugin.FollowTrace(entities.Trace{Value: domain, Type: entities.Domain})
+	traces, err := plugin.FollowTrace(context.Background(), entities.Trace{Value: domain, Type: entities.Domain})
 
 	require.NoError(t, err)
 	require.NotEmpty(t, traces)
@@ -126,7 +128,7 @@ func TestDNSRecordsPlugin_FollowTrace_Subdomain(t *testing.T) {
 		},
 	}
 
-	traces, err := plugin.FollowTrace(entities.Trace{Value: domain, Type: entities.Subdomain})
+	traces, err := plugin.FollowTrace(context.Background(), entities.Trace{Value: domain, Type: entities.Subdomain})
 
 	require.NoError(t, err)
 	require.Len(t, traces, 1)
@@ -134,7 +136,7 @@ func TestDNSRecordsPlugin_FollowTrace_Subdomain(t *testing.T) {
 }
 
 func TestDNSRecordsPlugin_String(t *testing.T) {
-	plugin := NewPlugin()
+	plugin := NewPlugin(config.DefaultConfig())
 	assert.Equal(t, "DNSRecordsPlugin", plugin.String())
 }
 

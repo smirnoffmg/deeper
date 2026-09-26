@@ -3,47 +3,38 @@ package gravatar
 import (
 	"context"
 
-	"github.com/rs/zerolog/log"
 	"github.com/smirnoffmg/deeper/internal/pkg/config"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 	deeperhttp "github.com/smirnoffmg/deeper/internal/pkg/http"
-	"github.com/smirnoffmg/deeper/internal/pkg/state"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 )
 
 const InputTraceType = entities.Email
-
-func init() {
-	p := NewPlugin()
-	if err := p.Register(); err != nil {
-		log.Error().Err(err).Msgf("Failed to register plugin %s", p)
-	}
-}
 
 type GravatarPlugin struct {
 	fetcher profileFetcher
 	apiKey  string
 }
 
-func NewPlugin() *GravatarPlugin {
-	cfg := config.LoadConfig()
+func NewPlugin(cfg *config.Config) *GravatarPlugin {
 	return &GravatarPlugin{
 		fetcher: deeperhttp.NewClient(cfg),
 		apiKey:  cfg.GravatarAPIKey,
 	}
 }
 
-func (p *GravatarPlugin) Register() error {
-	state.RegisterPlugin(InputTraceType, p)
+func (p *GravatarPlugin) Register(r plugins.Registry) error {
+	r.Add(InputTraceType, p)
 	return nil
 }
 
-func (p *GravatarPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
+func (p *GravatarPlugin) FollowTrace(ctx context.Context, trace entities.Trace) ([]entities.Trace, error) {
 	if trace.Type != InputTraceType {
 		return nil, nil
 	}
 
 	hash := emailHash(trace.Value)
-	profile, found, err := fetchProfile(context.Background(), p.fetcher, hash, p.apiKey)
+	profile, found, err := fetchProfile(ctx, p.fetcher, hash, p.apiKey)
 	if err != nil {
 		return nil, err
 	}

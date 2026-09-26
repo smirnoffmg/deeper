@@ -1,32 +1,33 @@
 package coderepos
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 
-	"github.com/rs/zerolog/log"
+	"github.com/smirnoffmg/deeper/internal/pkg/config"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
-	"github.com/smirnoffmg/deeper/internal/pkg/state"
+	deeperhttp "github.com/smirnoffmg/deeper/internal/pkg/http"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 )
 
 const InputTraceType = entities.Username
 
-func init() {
-	p := NewPlugin()
-	if err := p.Register(); err != nil {
-		log.Error().Err(err).Msgf("Failed to register plugin %s", p)
-	}
+type repoFetcher interface {
+	Get(ctx context.Context, url string) (*http.Response, error)
 }
 
-type CodeRepositoriesPlugin struct{}
-
-func NewPlugin() *CodeRepositoriesPlugin {
-	return &CodeRepositoriesPlugin{}
+type CodeRepositoriesPlugin struct {
+	fetcher repoFetcher
 }
 
-func (g *CodeRepositoriesPlugin) Register() error {
-	state.RegisterPlugin(InputTraceType, g)
+func NewPlugin(cfg *config.Config) *CodeRepositoriesPlugin {
+	return &CodeRepositoriesPlugin{fetcher: deeperhttp.NewClient(cfg)}
+}
+
+func (g *CodeRepositoriesPlugin) Register(r plugins.Registry) error {
+	r.Add(InputTraceType, g)
 	return nil
 }
 
@@ -46,24 +47,24 @@ type GitLabRepo struct {
 	WebURL string `json:"web_url"`
 }
 
-func (g *CodeRepositoriesPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
+func (g *CodeRepositoriesPlugin) FollowTrace(ctx context.Context, trace entities.Trace) ([]entities.Trace, error) {
 	if trace.Type != InputTraceType {
 		return nil, nil
 	}
 
 	var newTraces []entities.Trace
 
-	githubRepos, err := fetchGitHubRepos(trace.Value)
+	githubRepos, err := fetchGitHubRepos(ctx, g.fetcher, trace.Value)
 	if err == nil {
 		newTraces = append(newTraces, githubRepos...)
 	}
 
-	bitbucketRepos, err := fetchBitbucketRepos(trace.Value)
+	bitbucketRepos, err := fetchBitbucketRepos(ctx, g.fetcher, trace.Value)
 	if err == nil {
 		newTraces = append(newTraces, bitbucketRepos...)
 	}
 
-	gitlabRepos, err := fetchGitLabRepos(trace.Value)
+	gitlabRepos, err := fetchGitLabRepos(ctx, g.fetcher, trace.Value)
 	if err == nil {
 		newTraces = append(newTraces, gitlabRepos...)
 	}
@@ -71,9 +72,9 @@ func (g *CodeRepositoriesPlugin) FollowTrace(trace entities.Trace) ([]entities.T
 	return newTraces, nil
 }
 
-func fetchGitHubRepos(username string) ([]entities.Trace, error) {
+func fetchGitHubRepos(ctx context.Context, fetcher repoFetcher, username string) ([]entities.Trace, error) {
 	url := fmt.Sprintf("https://api.github.com/users/%s/repos", username)
-	resp, err := http.Get(url)
+	resp, err := fetcher.Get(ctx, url)
 	if err != nil {
 		return nil, err
 	}
@@ -94,9 +95,9 @@ func fetchGitHubRepos(username string) ([]entities.Trace, error) {
 	return traces, nil
 }
 
-func fetchBitbucketRepos(username string) ([]entities.Trace, error) {
+func fetchBitbucketRepos(ctx context.Context, fetcher repoFetcher, username string) ([]entities.Trace, error) {
 	url := fmt.Sprintf("https://api.bitbucket.org/2.0/repositories/%s", username)
-	resp, err := http.Get(url)
+	resp, err := fetcher.Get(ctx, url)
 	if err != nil {
 		return nil, err
 	}
@@ -119,9 +120,9 @@ func fetchBitbucketRepos(username string) ([]entities.Trace, error) {
 	return traces, nil
 }
 
-func fetchGitLabRepos(username string) ([]entities.Trace, error) {
+func fetchGitLabRepos(ctx context.Context, fetcher repoFetcher, username string) ([]entities.Trace, error) {
 	url := fmt.Sprintf("https://gitlab.com/api/v4/users/%s/projects", username)
-	resp, err := http.Get(url)
+	resp, err := fetcher.Get(ctx, url)
 	if err != nil {
 		return nil, err
 	}

@@ -2,13 +2,14 @@ package tasks
 
 import (
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 )
 
 // TraceProcessingTask represents a task for processing a trace through plugins
 type TraceProcessingTask struct {
 	Trace     entities.Trace
 	PluginKey string
-	Plugin    interface{}
+	Plugin    plugins.DeeperPlugin
 }
 
 // GetID returns a unique identifier for the task

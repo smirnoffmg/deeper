@@ -9,8 +9,9 @@ import (
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 
+	"github.com/smirnoffmg/deeper/internal/pkg/config"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
-	"github.com/smirnoffmg/deeper/internal/pkg/state"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 )
 
 // pluginsCmd represents the plugins command
@@ -29,7 +30,7 @@ var pluginsListCmd = &cobra.Command{
 	Long: `List all plugins currently registered in the system, showing which
 trace types they handle and their current status.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return listPlugins()
+		return listPlugins(loadPlugins(config.LoadConfig()))
 	},
 }
 
@@ -40,7 +41,7 @@ var pluginsInfoCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		pluginName := args[0]
-		return showPluginInfo(pluginName)
+		return showPluginInfo(loadPlugins(config.LoadConfig()), pluginName)
 	},
 }
 
@@ -50,7 +51,7 @@ var pluginsTypesCmd = &cobra.Command{
 	Short: "List all supported trace types",
 	Long:  `List all trace types that can be processed by the available plugins.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return listTraceTypes()
+		return listTraceTypes(loadPlugins(config.LoadConfig()))
 	},
 }
 
@@ -60,11 +61,11 @@ func init() {
 	pluginsCmd.AddCommand(pluginsTypesCmd)
 }
 
-func listPlugins() error {
+func listPlugins(registry plugins.Registry) error {
 	fmt.Println("Available Plugins:")
 	fmt.Println("==================")
 
-	if len(state.ActivePlugins) == 0 {
+	if len(registry) == 0 {
 		fmt.Println("No plugins registered")
 		return nil
 	}
@@ -76,7 +77,7 @@ func listPlugins() error {
 
 	// Sort trace types for consistent output
 	var traceTypes []string
-	for traceType := range state.ActivePlugins {
+	for traceType := range registry {
 		traceTypes = append(traceTypes, string(traceType))
 	}
 	sort.Strings(traceTypes)
@@ -84,7 +85,7 @@ func listPlugins() error {
 	totalPlugins := 0
 	for _, traceTypeStr := range traceTypes {
 		traceType := entities.TraceType(traceTypeStr)
-		plugins := state.ActivePlugins[traceType]
+		plugins := registry[traceType]
 
 		var pluginNames []string
 		for _, plugin := range plugins {
@@ -106,12 +107,12 @@ func listPlugins() error {
 	return nil
 }
 
-func showPluginInfo(pluginName string) error {
+func showPluginInfo(registry plugins.Registry, pluginName string) error {
 	fmt.Printf("Plugin Information: %s\n", pluginName)
 	fmt.Println("====================")
 
 	found := false
-	for traceType, plugins := range state.ActivePlugins {
+	for traceType, plugins := range registry {
 		for _, plugin := range plugins {
 			if plugin.String() == pluginName {
 				found = true
@@ -136,7 +137,7 @@ func showPluginInfo(pluginName string) error {
 	return nil
 }
 
-func listTraceTypes() error {
+func listTraceTypes(registry plugins.Registry) error {
 	fmt.Println("Supported Trace Types:")
 	fmt.Println("======================")
 
@@ -169,7 +170,7 @@ func listTraceTypes() error {
 
 	supported := 0
 	for _, traceType := range allTraceTypes {
-		pluginCount := len(state.ActivePlugins[traceType])
+		pluginCount := len(registry[traceType])
 		status := "❌ Not Supported"
 		if pluginCount > 0 {
 			status = "✅ Supported"

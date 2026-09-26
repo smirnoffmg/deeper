@@ -15,6 +15,8 @@ import (
 	"github.com/smirnoffmg/deeper/internal/pkg/config"
 	"github.com/smirnoffmg/deeper/internal/pkg/database"
 	"github.com/smirnoffmg/deeper/internal/pkg/metrics"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins/catalog"
 )
 
 var (
@@ -125,7 +127,15 @@ func createEngine() (*engine.Engine, *database.Repository, error) {
 	repo := database.NewRepository(db)
 	cache := database.NewCache(repo)
 
-	return engine.NewEngine(cfg, metricsCollector, repo, cache), repo, nil
+	return engine.NewEngine(cfg, loadPlugins(cfg), metricsCollector, repo, cache), repo, nil
+}
+
+func loadPlugins(cfg *config.Config) plugins.Registry {
+	registry, err := catalog.New(cfg)
+	if err != nil {
+		log.Warn().Err(err).Msg("Some plugins failed to register and are disabled for this run")
+	}
+	return registry
 }
 
 // applyCLIOverrides applies non-zero/non-empty CLI flag values onto cfg.

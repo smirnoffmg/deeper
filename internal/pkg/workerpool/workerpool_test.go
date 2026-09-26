@@ -219,7 +219,7 @@ func TestWorkerPool_CircuitBreaker(t *testing.T) {
 		TaskTimeout:      1 * time.Second,
 		CircuitBreakerConfig: CircuitBreakerConfig{
 			FailureThreshold: 2,
-			RecoveryTimeout:  100 * time.Millisecond,
+			RecoveryTimeout:  time.Minute,
 			HalfOpenMaxCalls: 1,
 			WindowSize:       1 * time.Second,
 		},

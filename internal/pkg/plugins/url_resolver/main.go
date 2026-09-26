@@ -1,20 +1,13 @@
 package url_resolver
 
 import (
+	"context"
 	"net"
 	"net/url"
 
-	"github.com/rs/zerolog/log"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
-	"github.com/smirnoffmg/deeper/internal/pkg/state"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 )
-
-func init() {
-	p := NewPlugin()
-	if err := p.Register(); err != nil {
-		log.Error().Err(err).Msgf("Failed to register plugin %s", p)
-	}
-}
 
 // URLResolverPlugin re-opens the domain-based plugin chain (crtsh,
 // dns_records, whois, contact_crawler, subdomains) for Url traces produced
@@ -26,12 +19,12 @@ func NewPlugin() *URLResolverPlugin {
 	return &URLResolverPlugin{}
 }
 
-func (p *URLResolverPlugin) Register() error {
-	state.RegisterPlugin(entities.Url, p)
+func (p *URLResolverPlugin) Register(r plugins.Registry) error {
+	r.Add(entities.Url, p)
 	return nil
 }
 
-func (p *URLResolverPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
+func (p *URLResolverPlugin) FollowTrace(ctx context.Context, trace entities.Trace) ([]entities.Trace, error) {
 	if trace.Type != entities.Url {
 		return nil, nil
 	}

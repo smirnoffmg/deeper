@@ -1,54 +1,44 @@
 package subdomains
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 
+	"github.com/smirnoffmg/deeper/internal/pkg/config"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
-	"github.com/smirnoffmg/deeper/internal/pkg/state"
+	deeperhttp "github.com/smirnoffmg/deeper/internal/pkg/http"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 )
 
 const InputTraceType = entities.Domain
 
 type hostSearchFetcher interface {
-	Get(url string) (*http.Response, error)
-}
-
-type httpHostSearchFetcher struct{}
-
-func (httpHostSearchFetcher) Get(url string) (*http.Response, error) {
-	return http.Get(url)
+	Get(ctx context.Context, url string) (*http.Response, error)
 }
 
 type SubdomainPlugin struct {
 	fetcher hostSearchFetcher
 }
 
-func init() {
-	plugin := NewPlugin()
-	if err := plugin.Register(); err != nil {
-		panic(err)
-	}
+func NewPlugin(cfg *config.Config) *SubdomainPlugin {
+	return &SubdomainPlugin{fetcher: deeperhttp.NewClient(cfg)}
 }
 
-func NewPlugin() *SubdomainPlugin {
-	return &SubdomainPlugin{fetcher: httpHostSearchFetcher{}}
-}
-
-func (p *SubdomainPlugin) Register() error {
-	state.RegisterPlugin(InputTraceType, p)
+func (p *SubdomainPlugin) Register(r plugins.Registry) error {
+	r.Add(InputTraceType, p)
 	return nil
 }
 
-func (p *SubdomainPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
+func (p *SubdomainPlugin) FollowTrace(ctx context.Context, trace entities.Trace) ([]entities.Trace, error) {
 	if trace.Type != InputTraceType {
 		return nil, nil
 	}
 
 	url := fmt.Sprintf("https://api.hackertarget.com/hostsearch/?q=%s", trace.Value)
-	resp, err := p.fetcher.Get(url)
+	resp, err := p.fetcher.Get(ctx, url)
 	if err != nil {
 		return nil, err
 	}

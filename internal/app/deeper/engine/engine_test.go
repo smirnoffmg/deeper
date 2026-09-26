@@ -14,7 +14,7 @@ import (
 	"github.com/smirnoffmg/deeper/internal/pkg/database"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 	"github.com/smirnoffmg/deeper/internal/pkg/metrics"
-	"github.com/smirnoffmg/deeper/internal/pkg/state"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 )
 
 const testEngineTraceType entities.TraceType = entities.Username
@@ -25,12 +25,7 @@ type chainPlugin struct {
 	output string
 }
 
-func (p *chainPlugin) Register() error {
-	state.RegisterPlugin(testEngineTraceType, p)
-	return nil
-}
-
-func (p *chainPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
+func (p *chainPlugin) FollowTrace(_ context.Context, trace entities.Trace) ([]entities.Trace, error) {
 	if trace.Value != p.input {
 		return nil, nil
 	}
@@ -48,12 +43,7 @@ type multiParentPlugin struct {
 	name string
 }
 
-func (p *multiParentPlugin) Register() error {
-	state.RegisterPlugin(testEngineTraceType, p)
-	return nil
-}
-
-func (p *multiParentPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
+func (p *multiParentPlugin) FollowTrace(_ context.Context, trace entities.Trace) ([]entities.Trace, error) {
 	if trace.Value != "root" {
 		return nil, nil
 	}
@@ -64,7 +54,7 @@ func (p *multiParentPlugin) String() string {
 	return p.name
 }
 
-func setupEngine(t *testing.T) (*Engine, *database.Repository) {
+func setupEngine(t *testing.T, registry plugins.Registry) (*Engine, *database.Repository) {
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.WorkerPoolConfig.EnableDeduplication = false
@@ -76,13 +66,13 @@ func setupEngine(t *testing.T) (*Engine, *database.Repository) {
 
 	repo := database.NewRepository(db)
 	cache := database.NewCache(repo)
-	eng := NewEngine(cfg, metrics.GetGlobalMetrics(), repo, cache)
+	eng := NewEngine(cfg, registry, metrics.GetGlobalMetrics(), repo, cache)
 	t.Cleanup(func() { _ = eng.Shutdown(5 * time.Second) })
 	return eng, repo
 }
 
 func TestEngine_ProcessInput_BlankInputRejected(t *testing.T) {
-	eng, repo := setupEngine(t)
+	eng, repo := setupEngine(t, plugins.Registry{})
 	session, err := repo.CreateScanSession("   ")
 	require.NoError(t, err)
 
@@ -92,20 +82,12 @@ func TestEngine_ProcessInput_BlankInputRejected(t *testing.T) {
 }
 
 func TestEngine_ProcessInput_PersistsEdgeChain(t *testing.T) {
-	original := state.ActivePlugins[testEngineTraceType]
-	t.Cleanup(func() {
-		if original == nil {
-			delete(state.ActivePlugins, testEngineTraceType)
-			return
-		}
-		state.ActivePlugins[testEngineTraceType] = original
-	})
+	registry := plugins.Registry{testEngineTraceType: {
+		&chainPlugin{name: "step1", input: "root", output: "hop2"},
+		&chainPlugin{name: "step2", input: "hop2", output: "hop3"},
+	}}
 
-	state.ActivePlugins[testEngineTraceType] = nil
-	require.NoError(t, (&chainPlugin{name: "step1", input: "root", output: "hop2"}).Register())
-	require.NoError(t, (&chainPlugin{name: "step2", input: "hop2", output: "hop3"}).Register())
-
-	eng, repo := setupEngine(t)
+	eng, repo := setupEngine(t, registry)
 	session, err := repo.CreateScanSession("root")
 	require.NoError(t, err)
 
@@ -135,19 +117,9 @@ func TestEngine_ProcessInput_PersistsEdgeChain(t *testing.T) {
 // as a "new" child doesn't cause it to be queued and processed a second
 // time.
 func TestEngine_ProcessInput_SeedNotReprocessedWhenRediscovered(t *testing.T) {
-	original := state.ActivePlugins[testEngineTraceType]
-	t.Cleanup(func() {
-		if original == nil {
-			delete(state.ActivePlugins, testEngineTraceType)
-			return
-		}
-		state.ActivePlugins[testEngineTraceType] = original
-	})
+	registry := plugins.Registry{testEngineTraceType: {&chainPlugin{name: "rediscovers-seed", input: "root", output: "root"}}}
 
-	state.ActivePlugins[testEngineTraceType] = nil
-	require.NoError(t, (&chainPlugin{name: "rediscovers-seed", input: "root", output: "root"}).Register())
-
-	eng, repo := setupEngine(t)
+	eng, repo := setupEngine(t, registry)
 	session, err := repo.CreateScanSession("root")
 	require.NoError(t, err)
 
@@ -164,22 +136,12 @@ func TestEngine_ProcessInput_SeedNotReprocessedWhenRediscovered(t *testing.T) {
 }
 
 func TestEngine_ProcessInput_MultiParentPersistence(t *testing.T) {
-	original := state.ActivePlugins[testEngineTraceType]
-	t.Cleanup(func() {
-		if original == nil {
-			delete(state.ActivePlugins, testEngineTraceType)
-			return
-		}
-		state.ActivePlugins[testEngineTraceType] = original
-	})
-
-	state.ActivePlugins[testEngineTraceType] = nil
+	registry := plugins.Registry{}
 	for i := 0; i < 2; i++ {
-		p := &multiParentPlugin{name: fmt.Sprintf("parent-plugin-%d", i)}
-		require.NoError(t, p.Register())
+		registry.Add(testEngineTraceType, &multiParentPlugin{name: fmt.Sprintf("parent-plugin-%d", i)})
 	}
 
-	eng, repo := setupEngine(t)
+	eng, repo := setupEngine(t, registry)
 	session, err := repo.CreateScanSession("root")
 	require.NoError(t, err)
 

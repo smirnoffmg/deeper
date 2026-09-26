@@ -1,6 +1,7 @@
 package crtsh
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -17,7 +18,7 @@ type fakeCertFetcher struct {
 	err        error
 }
 
-func (f *fakeCertFetcher) Get(url string) (*http.Response, error) {
+func (f *fakeCertFetcher) Get(_ context.Context, url string) (*http.Response, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -34,7 +35,7 @@ func (f *fakeCertFetcher) Get(url string) (*http.Response, error) {
 
 func TestSubdomainPlugin_FollowTrace_WrongType(t *testing.T) {
 	plugin := &SubdomainPlugin{fetcher: &fakeCertFetcher{}}
-	traces, err := plugin.FollowTrace(entities.Trace{Value: "x", Type: entities.Email})
+	traces, err := plugin.FollowTrace(context.Background(), entities.Trace{Value: "x", Type: entities.Email})
 	require.NoError(t, err)
 	assert.Empty(t, traces)
 }
@@ -44,7 +45,7 @@ func TestSubdomainPlugin_FollowTrace_ParsesJSON(t *testing.T) {
 		body: `[{"name_value":"www.example.com\napi.example.com"}]`,
 	}}
 
-	traces, err := plugin.FollowTrace(entities.Trace{Value: "example.com", Type: entities.Domain})
+	traces, err := plugin.FollowTrace(context.Background(), entities.Trace{Value: "example.com", Type: entities.Domain})
 
 	require.NoError(t, err)
 	require.Len(t, traces, 2)
@@ -55,7 +56,7 @@ func TestSubdomainPlugin_FollowTrace_HTMLResponse(t *testing.T) {
 		body: `<html><body>rate limited</body></html>`,
 	}}
 
-	traces, err := plugin.FollowTrace(entities.Trace{Value: "example.com", Type: entities.Domain})
+	traces, err := plugin.FollowTrace(context.Background(), entities.Trace{Value: "example.com", Type: entities.Domain})
 
 	require.NoError(t, err)
 	assert.Empty(t, traces)
@@ -66,7 +67,7 @@ func TestSubdomainPlugin_FollowTrace_RequestError(t *testing.T) {
 		err: assert.AnError,
 	}}
 
-	traces, err := plugin.FollowTrace(entities.Trace{Value: "example.com", Type: entities.Domain})
+	traces, err := plugin.FollowTrace(context.Background(), entities.Trace{Value: "example.com", Type: entities.Domain})
 
 	require.NoError(t, err)
 	assert.Empty(t, traces)
@@ -83,7 +84,7 @@ func TestSubdomainPlugin_FollowTrace_ExcludesWildcardSAN(t *testing.T) {
 		body: `[{"name_value":"www.example.com\n*.example.com"}]`,
 	}}
 
-	traces, err := plugin.FollowTrace(entities.Trace{Value: "example.com", Type: entities.Domain})
+	traces, err := plugin.FollowTrace(context.Background(), entities.Trace{Value: "example.com", Type: entities.Domain})
 
 	require.NoError(t, err)
 	require.Len(t, traces, 1)

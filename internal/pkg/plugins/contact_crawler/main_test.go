@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/smirnoffmg/deeper/internal/pkg/config"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -83,7 +84,7 @@ func testPlugin(fetcher pageFetcher) *ContactCrawlerPlugin {
 func TestContactCrawlerPlugin_FollowTrace_WrongType(t *testing.T) {
 	plugin := testPlugin(newFakePageFetcher())
 
-	traces, err := plugin.FollowTrace(entities.Trace{Value: "x", Type: entities.Email})
+	traces, err := plugin.FollowTrace(context.Background(), entities.Trace{Value: "x", Type: entities.Email})
 
 	require.NoError(t, err)
 	assert.Empty(t, traces)
@@ -97,7 +98,7 @@ func TestContactCrawlerPlugin_FollowTrace_DedupesEmail(t *testing.T) {
 	</body></html>`)
 
 	plugin := testPlugin(fetcher)
-	traces, err := plugin.FollowTrace(entities.Trace{Value: "codescoring.ru", Type: entities.Domain})
+	traces, err := plugin.FollowTrace(context.Background(), entities.Trace{Value: "codescoring.ru", Type: entities.Domain})
 
 	require.NoError(t, err)
 	require.Len(t, traces, 1)
@@ -110,7 +111,7 @@ func TestContactCrawlerPlugin_FollowTrace_SeedFetchError(t *testing.T) {
 	fetcher.setSeedError(errors.New("connection refused"))
 
 	plugin := testPlugin(fetcher)
-	traces, err := plugin.FollowTrace(entities.Trace{Value: "codescoring.ru", Type: entities.Domain})
+	traces, err := plugin.FollowTrace(context.Background(), entities.Trace{Value: "codescoring.ru", Type: entities.Domain})
 
 	require.NoError(t, err)
 	assert.Empty(t, traces)
@@ -127,7 +128,7 @@ func TestContactCrawlerPlugin_FollowTrace_MidCrawlErrorContinues(t *testing.T) {
 	fetcher.setPage("https://codescoring.ru/contact", `<html><body><a href="tel:+1-555-123-4567">call</a></body></html>`)
 
 	plugin := testPlugin(fetcher)
-	traces, err := plugin.FollowTrace(entities.Trace{Value: "codescoring.ru", Type: entities.Domain})
+	traces, err := plugin.FollowTrace(context.Background(), entities.Trace{Value: "codescoring.ru", Type: entities.Domain})
 
 	require.NoError(t, err)
 	require.NotEmpty(t, traces)
@@ -150,7 +151,7 @@ func TestContactCrawlerPlugin_FollowTrace_ExternalHostNotFetched(t *testing.T) {
 	fetcher.setPage("https://evil.com/phish", `<html><body>should not fetch</body></html>`)
 
 	plugin := testPlugin(fetcher)
-	_, err := plugin.FollowTrace(entities.Trace{Value: "codescoring.ru", Type: entities.Domain})
+	_, err := plugin.FollowTrace(context.Background(), entities.Trace{Value: "codescoring.ru", Type: entities.Domain})
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, fetcher.fetchCount())
@@ -161,14 +162,14 @@ func TestContactCrawlerPlugin_FollowTrace_MalformedHTML(t *testing.T) {
 	fetcher.setPage("https://codescoring.ru/", `<html><body><p>reach us at help@codescoring.ru<div`)
 
 	plugin := testPlugin(fetcher)
-	traces, err := plugin.FollowTrace(entities.Trace{Value: "codescoring.ru", Type: entities.Domain})
+	traces, err := plugin.FollowTrace(context.Background(), entities.Trace{Value: "codescoring.ru", Type: entities.Domain})
 
 	require.NoError(t, err)
 	require.NotEmpty(t, traces)
 }
 
 func TestContactCrawlerPlugin_String(t *testing.T) {
-	plugin := NewPlugin()
+	plugin := NewPlugin(config.DefaultConfig())
 	assert.Equal(t, "ContactCrawlerPlugin", plugin.String())
 }
 
@@ -187,12 +188,12 @@ func TestContactCrawlerPlugin_SharedDomainBudget(t *testing.T) {
 		domainBudget: budget,
 	}
 
-	_, err := plugin.FollowTrace(entities.Trace{Value: "registry.codescoring.ru", Type: entities.Subdomain})
+	_, err := plugin.FollowTrace(context.Background(), entities.Trace{Value: "registry.codescoring.ru", Type: entities.Subdomain})
 	require.NoError(t, err)
 	firstCount := fetcher.fetchCount()
 	require.Equal(t, 2, firstCount)
 
-	_, err = plugin.FollowTrace(entities.Trace{Value: "www.codescoring.ru", Type: entities.Subdomain})
+	_, err = plugin.FollowTrace(context.Background(), entities.Trace{Value: "www.codescoring.ru", Type: entities.Subdomain})
 	require.NoError(t, err)
 
 	assert.Equal(t, 3, fetcher.fetchCount())

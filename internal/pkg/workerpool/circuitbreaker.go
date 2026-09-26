@@ -72,6 +72,23 @@ func (cb *CircuitBreaker) IsOpen() bool {
 	}
 }
 
+// Allow reports whether a call may proceed. Unlike IsOpen it moves an open
+// breaker to half-open once RecoveryTimeout has passed, so a limited number
+// of probe calls can find out whether the source has recovered.
+func (cb *CircuitBreaker) Allow() bool {
+	switch cb.GetState() {
+	case StateOpen:
+		if !cb.tryHalfOpen() {
+			return false
+		}
+		fallthrough
+	case StateHalfOpen:
+		return atomic.AddInt64(&cb.halfOpenCalls, 1) <= int64(cb.config.HalfOpenMaxCalls)
+	default:
+		return !cb.shouldOpen()
+	}
+}
+
 // RecordResult records the result of an operation
 func (cb *CircuitBreaker) RecordResult(success bool) {
 	if success {

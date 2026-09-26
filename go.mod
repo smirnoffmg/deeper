@@ -6,12 +6,11 @@ require (
 	github.com/PuerkitoBio/goquery v1.12.0
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/olekukonko/tablewriter v0.0.5
+	github.com/pressly/goose/v3 v3.27.2
 	github.com/rs/zerolog v1.33.0
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.11.1
 	github.com/texttheater/golang-levenshtein/levenshtein v0.0.0-20200805054039-cae8b0eaed6c
-	go.uber.org/fx v1.24.0
-	go.uber.org/zap v1.26.0
 	golang.org/x/net v0.56.0
 	golang.org/x/time v0.12.0
 )
@@ -25,10 +24,8 @@ require (
 	github.com/mattn/go-runewidth v0.0.9 // indirect
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/pressly/goose/v3 v3.27.2 // indirect
 	github.com/sethvargo/go-retry v0.3.0 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
-	go.uber.org/dig v1.19.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect

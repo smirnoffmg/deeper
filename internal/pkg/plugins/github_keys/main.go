@@ -7,38 +7,30 @@ import (
 	"github.com/smirnoffmg/deeper/internal/pkg/config"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 	deeperhttp "github.com/smirnoffmg/deeper/internal/pkg/http"
-	"github.com/smirnoffmg/deeper/internal/pkg/state"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 )
-
-func init() {
-	p := NewPlugin()
-	if err := p.Register(); err != nil {
-		log.Error().Err(err).Msgf("Failed to register plugin %s", p)
-	}
-}
 
 type GitHubKeysPlugin struct {
 	fetcher keyFetcher
 }
 
-func NewPlugin() *GitHubKeysPlugin {
-	return &GitHubKeysPlugin{fetcher: deeperhttp.NewClient(config.LoadConfig())}
+func NewPlugin(cfg *config.Config) *GitHubKeysPlugin {
+	return &GitHubKeysPlugin{fetcher: deeperhttp.NewClient(cfg)}
 }
 
-func (p *GitHubKeysPlugin) Register() error {
-	state.RegisterPlugin(entities.Username, p)
+func (p *GitHubKeysPlugin) Register(r plugins.Registry) error {
+	r.Add(entities.Username, p)
 	return nil
 }
 
 // FollowTrace fetches SSH and GPG keys independently — one failing (rate
 // limit, network error) must not block the other, same discipline as
 // dns_records' independent per-record-type lookups.
-func (p *GitHubKeysPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
+func (p *GitHubKeysPlugin) FollowTrace(ctx context.Context, trace entities.Trace) ([]entities.Trace, error) {
 	if trace.Type != entities.Username {
 		return nil, nil
 	}
 
-	ctx := context.Background()
 	var traces []entities.Trace
 
 	sshTraces, err := fetchSSHKeys(ctx, p.fetcher, trace.Value)

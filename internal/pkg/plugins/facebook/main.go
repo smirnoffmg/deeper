@@ -3,40 +3,32 @@ package facebook
 import (
 	"context"
 
-	"github.com/rs/zerolog/log"
 	"github.com/smirnoffmg/deeper/internal/pkg/config"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 	deeperhttp "github.com/smirnoffmg/deeper/internal/pkg/http"
-	"github.com/smirnoffmg/deeper/internal/pkg/state"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 )
-
-func init() {
-	p := NewPlugin()
-	if err := p.Register(); err != nil {
-		log.Error().Err(err).Msgf("Failed to register plugin %s", p)
-	}
-}
 
 type FacebookPlugin struct {
 	fetcher searchFetcher
 }
 
-func NewPlugin() *FacebookPlugin {
-	return &FacebookPlugin{fetcher: deeperhttp.NewClient(config.LoadConfig())}
+func NewPlugin(cfg *config.Config) *FacebookPlugin {
+	return &FacebookPlugin{fetcher: deeperhttp.NewClient(cfg)}
 }
 
-func (g *FacebookPlugin) Register() error {
-	state.RegisterPlugin(entities.Username, g)
-	state.RegisterPlugin(entities.Name, g)
+func (g *FacebookPlugin) Register(r plugins.Registry) error {
+	r.Add(entities.Username, g)
+	r.Add(entities.Name, g)
 	return nil
 }
 
-func (g *FacebookPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
+func (g *FacebookPlugin) FollowTrace(ctx context.Context, trace entities.Trace) ([]entities.Trace, error) {
 	if trace.Type != entities.Username && trace.Type != entities.Name {
 		return nil, nil
 	}
 
-	profiles, err := searchFacebookProfiles(context.Background(), g.fetcher, trace.Value)
+	profiles, err := searchFacebookProfiles(ctx, g.fetcher, trace.Value)
 	if err != nil {
 		return nil, err
 	}

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"time"
@@ -11,7 +12,7 @@ import (
 
 	"github.com/smirnoffmg/deeper/internal/pkg/config"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
-	"github.com/smirnoffmg/deeper/internal/pkg/state"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 )
 
 var (
@@ -56,14 +57,15 @@ func runHealthCheck() error {
 
 	// Basic health checks
 	checks = append(checks, checkConfiguration())
-	checks = append(checks, checkPluginRegistration())
-	checks = append(checks, checkTraceTypeSupport())
+	registry := loadPlugins(config.LoadConfig())
+	checks = append(checks, checkPluginRegistration(registry))
+	checks = append(checks, checkTraceTypeSupport(registry))
 
 	// Detailed checks if requested
 	if healthDetailed {
 		log.Info().Msg("Running detailed health checks...")
 		checks = append(checks, checkExternalConnectivity())
-		checks = append(checks, checkPluginFunctionality())
+		checks = append(checks, checkPluginFunctionality(registry))
 	}
 
 	// Display results
@@ -126,7 +128,7 @@ func checkConfiguration() HealthCheck {
 	return check
 }
 
-func checkPluginRegistration() HealthCheck {
+func checkPluginRegistration(registry plugins.Registry) HealthCheck {
 	start := time.Now()
 	check := HealthCheck{Name: "Plugin Registration", Status: "PASS"}
 
@@ -134,22 +136,22 @@ func checkPluginRegistration() HealthCheck {
 		check.Duration = time.Since(start)
 	}()
 
-	if len(state.ActivePlugins) == 0 {
+	if len(registry) == 0 {
 		check.Status = "FAIL"
 		check.Message = "No plugins registered"
 		return check
 	}
 
 	totalPlugins := 0
-	for _, plugins := range state.ActivePlugins {
+	for _, plugins := range registry {
 		totalPlugins += len(plugins)
 	}
 
-	check.Message = fmt.Sprintf("%d plugins registered for %d trace types", totalPlugins, len(state.ActivePlugins))
+	check.Message = fmt.Sprintf("%d plugins registered for %d trace types", totalPlugins, len(registry))
 	return check
 }
 
-func checkTraceTypeSupport() HealthCheck {
+func checkTraceTypeSupport(registry plugins.Registry) HealthCheck {
 	start := time.Now()
 	check := HealthCheck{Name: "Trace Type Support", Status: "PASS"}
 
@@ -164,7 +166,7 @@ func checkTraceTypeSupport() HealthCheck {
 
 	supported := 0
 	for _, traceType := range coreTypes {
-		if len(state.ActivePlugins[traceType]) > 0 {
+		if len(registry[traceType]) > 0 {
 			supported++
 		}
 	}
@@ -201,7 +203,7 @@ func checkExternalConnectivity() HealthCheck {
 	return check
 }
 
-func checkPluginFunctionality() HealthCheck {
+func checkPluginFunctionality(registry plugins.Registry) HealthCheck {
 	start := time.Now()
 	check := HealthCheck{Name: "Plugin Functionality", Status: "PASS"}
 
@@ -215,10 +217,10 @@ func checkPluginFunctionality() HealthCheck {
 		Type:  entities.Username,
 	}
 
-	plugins := state.ActivePlugins[entities.Username]
+	plugins := registry[entities.Username]
 	if len(plugins) > 0 {
 		plugin := plugins[0]
-		_, err := plugin.FollowTrace(testTrace)
+		_, err := plugin.FollowTrace(context.Background(), testTrace)
 		if err != nil {
 			check.Status = "WARN"
 			check.Message = fmt.Sprintf("Plugin test failed: %v", err)

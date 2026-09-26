@@ -23,7 +23,7 @@ func (f *fakeResolver) LookupIPAddr(ctx context.Context, host string) ([]net.IPA
 func TestDNSResolverPlugin_FollowTrace_WrongType(t *testing.T) {
 	plugin := &DNSResolverPlugin{resolver: &fakeResolver{}}
 
-	traces, err := plugin.FollowTrace(entities.Trace{Value: "codescoring.ru", Type: entities.Domain})
+	traces, err := plugin.FollowTrace(context.Background(), entities.Trace{Value: "codescoring.ru", Type: entities.Domain})
 
 	require.NoError(t, err)
 	assert.Empty(t, traces)
@@ -37,7 +37,7 @@ func TestDNSResolverPlugin_FollowTrace_ResolvesAddresses(t *testing.T) {
 		},
 	}}
 
-	traces, err := plugin.FollowTrace(entities.Trace{Value: "registry.codescoring.ru", Type: entities.Subdomain})
+	traces, err := plugin.FollowTrace(context.Background(), entities.Trace{Value: "registry.codescoring.ru", Type: entities.Subdomain})
 
 	require.NoError(t, err)
 	require.Len(t, traces, 2)
@@ -49,7 +49,7 @@ func TestDNSResolverPlugin_FollowTrace_ResolvesAddresses(t *testing.T) {
 func TestDNSResolverPlugin_FollowTrace_LookupError(t *testing.T) {
 	plugin := &DNSResolverPlugin{resolver: &fakeResolver{err: errors.New("no such host")}}
 
-	traces, err := plugin.FollowTrace(entities.Trace{Value: "nonexistent.codescoring.ru", Type: entities.Subdomain})
+	traces, err := plugin.FollowTrace(context.Background(), entities.Trace{Value: "nonexistent.codescoring.ru", Type: entities.Subdomain})
 
 	require.Error(t, err)
 	assert.Empty(t, traces)
@@ -60,7 +60,7 @@ func TestDNSResolverPlugin_FollowTrace_SkipsWildcard(t *testing.T) {
 		addrs: []net.IPAddr{{IP: net.ParseIP("1.2.3.4")}},
 	}}
 
-	traces, err := plugin.FollowTrace(entities.Trace{Value: "*.codescoring.ru", Type: entities.Subdomain})
+	traces, err := plugin.FollowTrace(context.Background(), entities.Trace{Value: "*.codescoring.ru", Type: entities.Subdomain})
 
 	require.NoError(t, err)
 	assert.Empty(t, traces)

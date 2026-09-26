@@ -5,19 +5,11 @@ import (
 	"net"
 	"strings"
 
-	"github.com/rs/zerolog/log"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
-	"github.com/smirnoffmg/deeper/internal/pkg/state"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 )
 
 const InputTraceType = entities.Subdomain
-
-func init() {
-	p := NewPlugin()
-	if err := p.Register(); err != nil {
-		log.Error().Err(err).Msgf("Failed to register plugin %s", p)
-	}
-}
 
 // ipResolver is the network boundary, injectable so FollowTrace can be tested without real DNS calls.
 type ipResolver interface {
@@ -32,12 +24,12 @@ func NewPlugin() *DNSResolverPlugin {
 	return &DNSResolverPlugin{resolver: net.DefaultResolver}
 }
 
-func (p *DNSResolverPlugin) Register() error {
-	state.RegisterPlugin(InputTraceType, p)
+func (p *DNSResolverPlugin) Register(r plugins.Registry) error {
+	r.Add(InputTraceType, p)
 	return nil
 }
 
-func (p *DNSResolverPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
+func (p *DNSResolverPlugin) FollowTrace(ctx context.Context, trace entities.Trace) ([]entities.Trace, error) {
 	if trace.Type != InputTraceType {
 		return nil, nil
 	}
@@ -46,7 +38,7 @@ func (p *DNSResolverPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace,
 		return nil, nil
 	}
 
-	addrs, err := p.resolver.LookupIPAddr(context.Background(), trace.Value)
+	addrs, err := p.resolver.LookupIPAddr(ctx, trace.Value)
 	if err != nil {
 		return nil, err
 	}

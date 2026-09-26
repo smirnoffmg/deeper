@@ -1,6 +1,7 @@
 package ip_intel
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -15,7 +16,7 @@ func TestIPIntelPlugin_FollowTrace_WrongType(t *testing.T) {
 		addr: &fakeAddrLookup{},
 	}
 
-	traces, err := plugin.FollowTrace(entities.Trace{Value: "example.com", Type: entities.Domain})
+	traces, err := plugin.FollowTrace(context.Background(), entities.Trace{Value: "example.com", Type: entities.Domain})
 
 	require.NoError(t, err)
 	assert.Empty(t, traces)
@@ -39,7 +40,7 @@ func TestIPIntelPlugin_FollowTrace_FullIntel(t *testing.T) {
 		},
 	}
 
-	traces, err := plugin.FollowTrace(entities.Trace{Value: ip, Type: entities.IpAddr})
+	traces, err := plugin.FollowTrace(context.Background(), entities.Trace{Value: ip, Type: entities.IpAddr})
 
 	require.NoError(t, err)
 	require.Len(t, traces, 4)
@@ -62,7 +63,7 @@ func TestIPIntelPlugin_FollowTrace_PTROnly(t *testing.T) {
 		},
 	}
 
-	traces, err := plugin.FollowTrace(entities.Trace{Value: "198.51.100.5", Type: entities.IpAddr})
+	traces, err := plugin.FollowTrace(context.Background(), entities.Trace{Value: "198.51.100.5", Type: entities.IpAddr})
 
 	require.NoError(t, err)
 	require.Len(t, traces, 1)
@@ -75,7 +76,7 @@ func TestIPIntelPlugin_FollowTrace_NoResults(t *testing.T) {
 		addr: &fakeAddrLookup{err: errors.New("no ptr")},
 	}
 
-	traces, err := plugin.FollowTrace(entities.Trace{Value: "198.51.100.5", Type: entities.IpAddr})
+	traces, err := plugin.FollowTrace(context.Background(), entities.Trace{Value: "198.51.100.5", Type: entities.IpAddr})
 
 	require.NoError(t, err)
 	assert.Empty(t, traces)

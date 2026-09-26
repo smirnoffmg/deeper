@@ -1,6 +1,7 @@
 package social_profiles
 
 import (
+	"context"
 	"fmt"
 	"sync/atomic"
 	"testing"
@@ -73,10 +74,10 @@ func manyEntries(n int) map[string]SherlockEntry {
 }
 
 func TestFollowTrace_CollectsAllMatchesWithoutDataRace(t *testing.T) {
-	checkFn := func(entry SherlockEntry, username string) bool { return true }
+	checkFn := func(_ context.Context, entry SherlockEntry, username string) bool { return true }
 	p := &SocialProfilesPlugin{entries: manyEntries(50), checkFn: checkFn}
 
-	traces, err := p.FollowTrace(entities.Trace{Type: InputTraceType, Value: "alsmirn"})
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: InputTraceType, Value: "alsmirn"})
 
 	require.NoError(t, err)
 	assert.Len(t, traces, 50)
@@ -84,7 +85,7 @@ func TestFollowTrace_CollectsAllMatchesWithoutDataRace(t *testing.T) {
 
 func TestFollowTrace_BoundsConcurrency(t *testing.T) {
 	var current, maxSeen int32
-	checkFn := func(entry SherlockEntry, username string) bool {
+	checkFn := func(_ context.Context, entry SherlockEntry, username string) bool {
 		n := atomic.AddInt32(&current, 1)
 		for {
 			old := atomic.LoadInt32(&maxSeen)
@@ -98,7 +99,7 @@ func TestFollowTrace_BoundsConcurrency(t *testing.T) {
 	}
 	p := &SocialProfilesPlugin{entries: manyEntries(200), checkFn: checkFn}
 
-	_, err := p.FollowTrace(entities.Trace{Type: InputTraceType, Value: "alsmirn"})
+	_, err := p.FollowTrace(context.Background(), entities.Trace{Type: InputTraceType, Value: "alsmirn"})
 
 	require.NoError(t, err)
 	assert.LessOrEqual(t, int(maxSeen), maxConcurrentChecks)
@@ -108,8 +109,29 @@ func TestFollowTrace_BoundsConcurrency(t *testing.T) {
 func TestFollowTrace_WrongTraceType(t *testing.T) {
 	p := &SocialProfilesPlugin{entries: manyEntries(3)}
 
-	traces, err := p.FollowTrace(entities.Trace{Type: entities.Domain, Value: "example.com"})
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Domain, Value: "example.com"})
 
 	require.NoError(t, err)
 	assert.Nil(t, traces)
+}
+
+// TestFollowTrace_StopsAtDeadline is a regression test: ~480 sherlock probes
+// used to run to completion no matter how long past TaskTimeout they went.
+func TestFollowTrace_StopsAtDeadline(t *testing.T) {
+	var calls atomic.Int64
+	checkFn := func(ctx context.Context, entry SherlockEntry, username string) bool {
+		calls.Add(1)
+		<-ctx.Done()
+		return false
+	}
+	p := &SocialProfilesPlugin{entries: manyEntries(200), checkFn: checkFn}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := p.FollowTrace(ctx, entities.Trace{Type: InputTraceType, Value: "alsmirn"})
+	require.NoError(t, err)
+	require.Less(t, time.Since(start), time.Second)
+	require.LessOrEqual(t, calls.Load(), int64(maxConcurrentChecks+1), "no new probes may start after the deadline")
 }

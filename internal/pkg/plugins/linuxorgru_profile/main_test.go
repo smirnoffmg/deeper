@@ -1,11 +1,13 @@
 package linuxorgru_profile
 
 import (
+	"context"
 	"net/http"
 	"testing"
 
+	"github.com/smirnoffmg/deeper/internal/pkg/config"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
-	"github.com/smirnoffmg/deeper/internal/pkg/state"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -13,7 +15,7 @@ import (
 func TestFollowTrace_WrongType(t *testing.T) {
 	p := &LinuxOrgRuProfilePlugin{fetcher: &fakePageFetcher{}}
 
-	traces, err := p.FollowTrace(entities.Trace{Type: entities.Domain, Value: "example.com"})
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Domain, Value: "example.com"})
 	require.NoError(t, err)
 	assert.Nil(t, traces)
 }
@@ -21,7 +23,7 @@ func TestFollowTrace_WrongType(t *testing.T) {
 func TestFollowTrace_NonMatchingSocialGenericIgnored(t *testing.T) {
 	p := &LinuxOrgRuProfilePlugin{fetcher: &fakePageFetcher{}}
 
-	traces, err := p.FollowTrace(entities.Trace{Type: entities.SocialGeneric, Value: "https://keybase.io/alsmirn"})
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.SocialGeneric, Value: "https://keybase.io/alsmirn"})
 	require.NoError(t, err)
 	assert.Nil(t, traces)
 }
@@ -34,7 +36,7 @@ func TestFollowTrace_MatchingURL(t *testing.T) {
 	}
 	p := &LinuxOrgRuProfilePlugin{fetcher: fetcher}
 
-	traces, err := p.FollowTrace(entities.Trace{Type: entities.SocialGeneric, Value: "https://www.linux.org.ru/people/alsmirn/profile"})
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.SocialGeneric, Value: "https://www.linux.org.ru/people/alsmirn/profile"})
 	require.NoError(t, err)
 	require.NotEmpty(t, traces)
 }
@@ -55,11 +57,12 @@ func TestMatches_WrongTraceType(t *testing.T) {
 }
 
 func TestRegister_RegistersUnderSocialGeneric(t *testing.T) {
-	p := NewPlugin()
-	require.NoError(t, p.Register())
+	p := NewPlugin(config.DefaultConfig())
+	registry := plugins.Registry{}
+	require.NoError(t, p.Register(registry))
 
 	found := false
-	for _, registered := range state.ActivePlugins[entities.SocialGeneric] {
+	for _, registered := range registry[entities.SocialGeneric] {
 		if registered == p {
 			found = true
 		}

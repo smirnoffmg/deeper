@@ -1,10 +1,11 @@
 package whois
 
 import (
+	"context"
 	"testing"
 
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
-	"github.com/smirnoffmg/deeper/internal/pkg/state"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,7 +26,7 @@ func TestFollowTrace_InputTypes(t *testing.T) {
 			client := &fakeWhoisClient{responses: map[string]string{}}
 			p := &WhoisPlugin{client: client}
 
-			_, err := p.FollowTrace(entities.Trace{Value: "example.ru", Type: tt.traceType})
+			_, err := p.FollowTrace(context.Background(), entities.Trace{Value: "example.ru", Type: tt.traceType})
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantCall, client.lastQueried())
 		})
@@ -34,17 +35,18 @@ func TestFollowTrace_InputTypes(t *testing.T) {
 
 func TestRegister_RegistersUnderDomainOnly(t *testing.T) {
 	p := NewPlugin()
-	require.NoError(t, p.Register())
+	registry := plugins.Registry{}
+	require.NoError(t, p.Register(registry))
 
 	found := false
-	for _, registered := range state.ActivePlugins[entities.Domain] {
+	for _, registered := range registry[entities.Domain] {
 		if registered == p {
 			found = true
 		}
 	}
 	assert.True(t, found)
 
-	for _, registered := range state.ActivePlugins[entities.Subdomain] {
+	for _, registered := range registry[entities.Subdomain] {
 		assert.NotEqual(t, p, registered)
 	}
 }

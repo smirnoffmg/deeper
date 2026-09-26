@@ -1,11 +1,13 @@
 package companyregistry
 
 import (
+	"context"
 	"net/http"
 	"testing"
 
+	"github.com/smirnoffmg/deeper/internal/pkg/config"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
-	"github.com/smirnoffmg/deeper/internal/pkg/state"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,7 +27,7 @@ func TestFollowTrace_InputTypes(t *testing.T) {
 			fetcher := &fakeSearchFetcher{responses: map[string]fakeResponse{}}
 			p := &CompanyRegistryPlugin{fetcher: fetcher}
 
-			_, err := p.FollowTrace(entities.Trace{Value: "7813227385", Type: tt.traceType})
+			_, err := p.FollowTrace(context.Background(), entities.Trace{Value: "7813227385", Type: tt.traceType})
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantCall, fetcher.lastURL != "")
 		})
@@ -40,17 +42,18 @@ func TestFollowTrace_ReturnsExtractedTraces(t *testing.T) {
 	}
 	p := &CompanyRegistryPlugin{fetcher: fetcher}
 
-	traces, err := p.FollowTrace(entities.Trace{Value: "7813227385", Type: entities.Company})
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{Value: "7813227385", Type: entities.Company})
 	require.NoError(t, err)
 	assert.Len(t, traces, 3)
 }
 
 func TestRegister_RegistersUnderCompanyOnly(t *testing.T) {
-	p := NewPlugin()
-	require.NoError(t, p.Register())
+	p := NewPlugin(config.DefaultConfig())
+	registry := plugins.Registry{}
+	require.NoError(t, p.Register(registry))
 
 	found := false
-	for _, registered := range state.ActivePlugins[entities.Company] {
+	for _, registered := range registry[entities.Company] {
 		if registered == p {
 			found = true
 		}

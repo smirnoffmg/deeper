@@ -1,10 +1,11 @@
 package url_resolver
 
 import (
+	"context"
 	"testing"
 
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
-	"github.com/smirnoffmg/deeper/internal/pkg/state"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -12,7 +13,7 @@ import (
 func TestFollowTrace_WrongType(t *testing.T) {
 	p := NewPlugin()
 
-	traces, err := p.FollowTrace(entities.Trace{Type: entities.Domain, Value: "example.com"})
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Domain, Value: "example.com"})
 	require.NoError(t, err)
 	assert.Nil(t, traces)
 }
@@ -20,7 +21,7 @@ func TestFollowTrace_WrongType(t *testing.T) {
 func TestFollowTrace_ExtractsHostAsDomain(t *testing.T) {
 	p := NewPlugin()
 
-	traces, err := p.FollowTrace(entities.Trace{Type: entities.Url, Value: "https://codescoring.com/some/path?q=1"})
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Url, Value: "https://codescoring.com/some/path?q=1"})
 	require.NoError(t, err)
 	require.Len(t, traces, 1)
 	assert.Equal(t, entities.Domain, traces[0].Type)
@@ -30,7 +31,7 @@ func TestFollowTrace_ExtractsHostAsDomain(t *testing.T) {
 func TestFollowTrace_IPLiteralHostSkipped(t *testing.T) {
 	p := NewPlugin()
 
-	traces, err := p.FollowTrace(entities.Trace{Type: entities.Url, Value: "http://192.168.1.1/admin"})
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Url, Value: "http://192.168.1.1/admin"})
 	require.NoError(t, err)
 	assert.Nil(t, traces)
 }
@@ -38,7 +39,7 @@ func TestFollowTrace_IPLiteralHostSkipped(t *testing.T) {
 func TestFollowTrace_IPv6LiteralHostSkipped(t *testing.T) {
 	p := NewPlugin()
 
-	traces, err := p.FollowTrace(entities.Trace{Type: entities.Url, Value: "http://[::1]/admin"})
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Url, Value: "http://[::1]/admin"})
 	require.NoError(t, err)
 	assert.Nil(t, traces)
 }
@@ -46,17 +47,18 @@ func TestFollowTrace_IPv6LiteralHostSkipped(t *testing.T) {
 func TestFollowTrace_MalformedURLReturnsNoTraces(t *testing.T) {
 	p := NewPlugin()
 
-	traces, err := p.FollowTrace(entities.Trace{Type: entities.Url, Value: "://not-a-url"})
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Url, Value: "://not-a-url"})
 	require.NoError(t, err)
 	assert.Nil(t, traces)
 }
 
 func TestRegister_RegistersUnderUrl(t *testing.T) {
 	p := NewPlugin()
-	require.NoError(t, p.Register())
+	registry := plugins.Registry{}
+	require.NoError(t, p.Register(registry))
 
 	found := false
-	for _, registered := range state.ActivePlugins[entities.Url] {
+	for _, registered := range registry[entities.Url] {
 		if registered == p {
 			found = true
 		}

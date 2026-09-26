@@ -1,11 +1,21 @@
 package plugins
 
-import "github.com/smirnoffmg/deeper/internal/pkg/entities"
+import (
+	"context"
+
+	"github.com/smirnoffmg/deeper/internal/pkg/entities"
+)
 
 type DeeperPlugin interface {
-	Register() error
-	FollowTrace(trace entities.Trace) ([]entities.Trace, error)
+	FollowTrace(ctx context.Context, trace entities.Trace) ([]entities.Trace, error)
 	String() string
+}
+
+// Registry maps each trace type to the plugins that follow it.
+type Registry map[entities.TraceType][]DeeperPlugin
+
+func (r Registry) Add(traceType entities.TraceType, plugin DeeperPlugin) {
+	r[traceType] = append(r[traceType], plugin)
 }
 
 // TraceMatcher lets a plugin declare, without doing any I/O, whether it

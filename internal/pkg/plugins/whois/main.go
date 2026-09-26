@@ -4,17 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/rs/zerolog/log"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
-	"github.com/smirnoffmg/deeper/internal/pkg/state"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 )
-
-func init() {
-	p := NewPlugin()
-	if err := p.Register(); err != nil {
-		log.Error().Err(err).Msgf("Failed to register plugin %s", p)
-	}
-}
 
 type WhoisPlugin struct {
 	client whoisClient
@@ -27,16 +19,16 @@ func NewPlugin() *WhoisPlugin {
 // Register only covers Domain — unlike most other plugins in this codebase,
 // WHOIS is a registration-level lookup keyed to the registrable domain, not
 // meaningful per-subdomain (most registries just return "not found").
-func (p *WhoisPlugin) Register() error {
-	state.RegisterPlugin(entities.Domain, p)
+func (p *WhoisPlugin) Register(r plugins.Registry) error {
+	r.Add(entities.Domain, p)
 	return nil
 }
 
-func (p *WhoisPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
+func (p *WhoisPlugin) FollowTrace(ctx context.Context, trace entities.Trace) ([]entities.Trace, error) {
 	if trace.Type != entities.Domain {
 		return nil, nil
 	}
-	return lookupWhois(context.Background(), p.client, trace.Value)
+	return lookupWhois(ctx, p.client, trace.Value)
 }
 
 func (p WhoisPlugin) String() string {

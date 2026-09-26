@@ -4,37 +4,29 @@ import (
 	"context"
 	"strings"
 
-	"github.com/rs/zerolog/log"
 	"github.com/smirnoffmg/deeper/internal/pkg/config"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 	deeperhttp "github.com/smirnoffmg/deeper/internal/pkg/http"
-	"github.com/smirnoffmg/deeper/internal/pkg/state"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 )
-
-func init() {
-	p := NewPlugin()
-	if err := p.Register(); err != nil {
-		log.Error().Err(err).Msgf("Failed to register plugin %s", p)
-	}
-}
 
 type DNSRecordsPlugin struct {
 	doh dohFetcher
 }
 
-func NewPlugin() *DNSRecordsPlugin {
+func NewPlugin(cfg *config.Config) *DNSRecordsPlugin {
 	return &DNSRecordsPlugin{
-		doh: deeperhttp.NewClient(config.LoadConfig()),
+		doh: deeperhttp.NewClient(cfg),
 	}
 }
 
-func (p *DNSRecordsPlugin) Register() error {
-	state.RegisterPlugin(entities.Domain, p)
-	state.RegisterPlugin(entities.Subdomain, p)
+func (p *DNSRecordsPlugin) Register(r plugins.Registry) error {
+	r.Add(entities.Domain, p)
+	r.Add(entities.Subdomain, p)
 	return nil
 }
 
-func (p *DNSRecordsPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, error) {
+func (p *DNSRecordsPlugin) FollowTrace(ctx context.Context, trace entities.Trace) ([]entities.Trace, error) {
 	if trace.Type != entities.Domain && trace.Type != entities.Subdomain {
 		return nil, nil
 	}
@@ -43,7 +35,7 @@ func (p *DNSRecordsPlugin) FollowTrace(trace entities.Trace) ([]entities.Trace, 
 		return nil, nil
 	}
 
-	return lookupDoHRecords(context.Background(), trace.Value, p.doh), nil
+	return lookupDoHRecords(ctx, trace.Value, p.doh), nil
 }
 
 func (p *DNSRecordsPlugin) String() string {
