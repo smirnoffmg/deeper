@@ -125,18 +125,6 @@ dev:
 	fi
 	@air
 
-# Run with uber-fx lifecycle management
-.PHONY: run-fx
-run-fx:
-	@echo "Running with uber-fx lifecycle management..."
-	@go run cmd/deeper/main.go
-
-# Run tests with uber-fx
-.PHONY: test-fx
-test-fx:
-	@echo "Running tests with uber-fx..."
-	@go test -v ./internal/app/deeper/...
-
 # Generate mocks for testing
 .PHONY: mocks
 mocks:
@@ -146,6 +134,14 @@ mocks:
 		go install github.com/golang/mock/mockgen@latest; \
 	fi
 	@mockgen -source=internal/plugins/base.go -destination=internal/plugins/mocks.go
+
+# Render docs/*.puml to SVG; the output is not committed
+.PHONY: diagrams
+diagrams:
+	@command -v plantuml >/dev/null 2>&1 || { echo "Install plantuml: brew install plantuml"; exit 1; }
+	@mkdir -p ${BUILD_DIR}/diagrams
+	@plantuml -tsvg -o $(abspath ${BUILD_DIR}/diagrams) docs/*.puml
+	@echo "Diagrams rendered to ${BUILD_DIR}/diagrams"
 
 # Security scan
 .PHONY: security
@@ -201,8 +197,7 @@ help:
 	@echo "  install      - Install binary to /usr/local/bin"
 	@echo "  uninstall    - Remove binary from /usr/local/bin"
 	@echo "  dev          - Run in development mode with hot reload"
-	@echo "  run-fx       - Run with uber-fx lifecycle management"
-	@echo "  test-fx      - Run tests with uber-fx"
+	@echo "  diagrams     - Render docs/*.puml to build/diagrams"
 	@echo "  mocks        - Generate mocks for testing"
 	@echo "  security     - Run security scan"
 	@echo "  cross-build  - Build for multiple platforms"

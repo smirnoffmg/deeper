@@ -141,5 +141,6 @@ $RECYCLE.BIN/
 
 .env
 build/deeper
+build/diagrams/
 /deeper
 .cursor/
