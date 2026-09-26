@@ -149,3 +149,41 @@ func TestRegister_RegistersUnderSubdomainAndDomain(t *testing.T) {
 func TestString(t *testing.T) {
 	assert.Equal(t, "LiveHostPlugin", (&LiveHostPlugin{}).String())
 }
+
+func TestFollowTrace_ErrorPageTitleSkipped(t *testing.T) {
+	// A 4xx page is still a live host, but its title ("403 Forbidden",
+	// "401 Authorization Required") is an error page, not a name.
+	cases := map[string]*http.Response{
+		"https://api.example.com": respWithBody(http.StatusForbidden, "<html><head><title>403 Forbidden</title></head></html>"),
+	}
+	p := &LiveHostPlugin{prober: &fakeProber{responses: cases}}
+
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Subdomain, Value: "api.example.com"})
+	require.NoError(t, err)
+	require.Len(t, traces, 1)
+	assert.Equal(t, entities.Trace{Value: "api.example.com", Type: entities.Host}, traces[0])
+}
+
+func TestFollowTrace_401TitleSkipped(t *testing.T) {
+	p := &LiveHostPlugin{prober: &fakeProber{responses: map[string]*http.Response{
+		"https://api.example.com": respWithBody(http.StatusUnauthorized, "<html><title>401 Authorization Required</title></html>"),
+	}}}
+
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Subdomain, Value: "api.example.com"})
+	require.NoError(t, err)
+	require.Len(t, traces, 1)
+	assert.Equal(t, entities.Host, traces[0].Type)
+}
+
+func TestFollowTrace_StatusLikeTitleOn200Skipped(t *testing.T) {
+	// Some WAFs serve a block page with a 200 status; a "404 Not Found"
+	// title is still noise.
+	p := &LiveHostPlugin{prober: &fakeProber{responses: map[string]*http.Response{
+		"https://api.example.com": respWithBody(http.StatusOK, "<html><title>404 Not Found</title></html>"),
+	}}}
+
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Subdomain, Value: "api.example.com"})
+	require.NoError(t, err)
+	require.Len(t, traces, 1)
+	assert.Equal(t, entities.Host, traces[0].Type)
+}

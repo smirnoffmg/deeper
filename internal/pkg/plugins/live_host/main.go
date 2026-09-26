@@ -3,6 +3,7 @@ package live_host
 import (
 	"context"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
@@ -47,7 +48,11 @@ func (p *LiveHostPlugin) FollowTrace(ctx context.Context, trace entities.Trace) 
 
 	traces := []entities.Trace{{Value: trace.Value, Type: entities.Host}}
 
-	if title := pageTitle(resp); title != "" {
+	// A 4xx page is still a live host, but its <title> is an error/block page
+	// ("403 Forbidden", "401 Authorization Required"), not a name -- so only a
+	// success/redirect page contributes a Name, and status-line-shaped titles
+	// (some WAFs serve a block page with a 200) are dropped too.
+	if title := pageTitle(resp); title != "" && resp.StatusCode < http.StatusBadRequest && !looksLikeStatusTitle(title) {
 		traces = append(traces, entities.Trace{Value: title, Type: entities.Name})
 	}
 
@@ -78,6 +83,14 @@ func pageTitle(resp *http.Response) string {
 		return ""
 	}
 	return strings.TrimSpace(doc.Find("title").First().Text())
+}
+
+// statusTitleRe matches titles that are really HTTP status lines, e.g.
+// "403 Forbidden" or a bare "500".
+var statusTitleRe = regexp.MustCompile(`^\d{3}(\s|$)`)
+
+func looksLikeStatusTitle(title string) bool {
+	return statusTitleRe.MatchString(strings.TrimSpace(title))
 }
 
 func (p *LiveHostPlugin) String() string {
