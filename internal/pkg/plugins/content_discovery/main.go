@@ -10,6 +10,8 @@ import (
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 	deeperhttp "github.com/smirnoffmg/deeper/internal/pkg/http"
 	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
+
+	"golang.org/x/sync/errgroup"
 )
 
 // defaultWords is a deliberately tiny list of high-signal paths worth probing
@@ -81,41 +83,37 @@ func (p *ContentDiscoveryPlugin) FollowTrace(ctx context.Context, trace entities
 	}
 
 	var (
-		sem  = make(chan struct{}, limit)
-		wg   sync.WaitGroup
 		mu   sync.Mutex
 		seen = make(map[string]struct{})
 		out  []entities.Trace
+		g    errgroup.Group
 	)
+	g.SetLimit(limit)
 
 	for _, word := range p.words {
-		select {
-		case <-ctx.Done():
-			wg.Wait()
-			return out, nil
-		case sem <- struct{}{}:
+		// A missing path is a normal result, not a group error, so the
+		// closure returns nil; errgroup provides bounded concurrency + Wait.
+		if ctx.Err() != nil {
+			break
 		}
-
-		wg.Add(1)
-		go func(word string) {
-			defer wg.Done()
-			defer func() { <-sem }()
-
+		g.Go(func() error {
 			fullURL := origin + "/" + word
 			if !p.exists(ctx, fullURL) {
-				return
+				return nil
 			}
-
 			mu.Lock()
 			if _, dup := seen[fullURL]; !dup {
 				seen[fullURL] = struct{}{}
 				out = append(out, entities.Trace{Value: fullURL, Type: entities.Url})
 			}
 			mu.Unlock()
-		}(word)
+			return nil
+		})
 	}
 
-	wg.Wait()
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 

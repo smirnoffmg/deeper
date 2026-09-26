@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -14,6 +15,8 @@ import (
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 	"github.com/smirnoffmg/deeper/internal/pkg/metrics"
 	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
+
+	"golang.org/x/sync/errgroup"
 )
 
 // Engine orchestrates the trace processing workflow
@@ -101,43 +104,40 @@ func (e *Engine) ProcessInput(ctx context.Context, input string, scanID int64) (
 // MaxConcurrency. A trace that fails is logged and skipped so the rest of the
 // batch still contributes to the graph.
 func (e *Engine) processBatch(ctx context.Context, traces []entities.Trace) []entities.Discovery {
-	var (
-		allResults []entities.Discovery
-		errors     []error
-		mu         sync.Mutex
-		wg         sync.WaitGroup
-	)
-
 	concurrency := e.config.MaxConcurrency
 	if concurrency <= 0 {
 		concurrency = 1
 	}
-	sem := make(chan struct{}, concurrency)
+
+	var (
+		allResults []entities.Discovery
+		errCount   atomic.Int64
+		mu         sync.Mutex
+		g          errgroup.Group
+	)
+	g.SetLimit(concurrency)
 
 	for _, trace := range traces {
-		wg.Add(1)
-		go func(trace entities.Trace) {
-			defer wg.Done()
-
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
+		// A per-trace failure is logged and skipped, not propagated as a group
+		// error: one bad trace must not cancel the rest of the batch.
+		g.Go(func() error {
 			results, err := e.processor.ProcessTrace(ctx, trace)
-			mu.Lock()
-			defer mu.Unlock()
 			if err != nil {
 				log.Error().Err(err).Msgf("Failed to process trace %v", trace)
-				errors = append(errors, err)
-				return
+				errCount.Add(1)
+				return nil
 			}
+			mu.Lock()
 			allResults = append(allResults, results...)
-		}(trace)
+			mu.Unlock()
+			return nil
+		})
 	}
 
-	wg.Wait()
+	_ = g.Wait()
 
-	if len(errors) > 0 {
-		log.Warn().Msgf("Encountered %d errors in batch processing", len(errors))
+	if n := errCount.Load(); n > 0 {
+		log.Warn().Msgf("Encountered %d errors in batch processing", n)
 	}
 
 	return allResults

@@ -12,6 +12,8 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
+
+	"golang.org/x/sync/errgroup"
 )
 
 const InputTraceType = entities.Username
@@ -138,23 +140,17 @@ func (g *SocialProfilesPlugin) FollowTrace(ctx context.Context, trace entities.T
 	var (
 		mu        sync.Mutex
 		newTraces []entities.Trace
-		wg        sync.WaitGroup
-		sem       = make(chan struct{}, maxConcurrentChecks)
+		eg        errgroup.Group
 	)
+	eg.SetLimit(maxConcurrentChecks)
 
-entries:
 	for _, entry := range g.entries {
-		select {
-		case sem <- struct{}{}:
-		case <-ctx.Done():
-			break entries
+		// A non-matching site is a normal result, not a group error, so the
+		// closure returns nil; errgroup gives bounded concurrency + Wait.
+		if ctx.Err() != nil {
+			break
 		}
-		wg.Add(1)
-
-		go func(entry SherlockEntry) {
-			defer wg.Done()
-			defer func() { <-sem }()
-
+		eg.Go(func() error {
 			if g.checkFn(ctx, entry, trace.Value) {
 				mu.Lock()
 				newTraces = append(newTraces, entities.Trace{
@@ -163,11 +159,13 @@ entries:
 				})
 				mu.Unlock()
 			}
-		}(entry)
-
+			return nil
+		})
 	}
 
-	wg.Wait()
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
 	return newTraces, nil
 }
 

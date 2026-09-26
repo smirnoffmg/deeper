@@ -11,6 +11,8 @@ import (
 
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
+
+	"golang.org/x/sync/errgroup"
 )
 
 // defaultPorts is a small explicit set of commonly exposed TCP services. It is
@@ -61,44 +63,39 @@ func (p *PortScanPlugin) FollowTrace(ctx context.Context, trace entities.Trace) 
 
 	host := trace.Value
 
+	limit := p.concurrency
+	if limit < 1 {
+		limit = 1
+	}
+
 	var (
 		mu      sync.Mutex
 		results []entities.Trace
-		wg      sync.WaitGroup
+		g       errgroup.Group
 	)
+	g.SetLimit(limit)
 
-	sem := make(chan struct{}, p.concurrency)
-
-scan:
 	for _, port := range p.ports {
+		// A closed port is a normal result, not a group error, so the
+		// closure never returns one -- errgroup here is bounded concurrency
+		// (SetLimit) plus Wait, not first-error cancellation.
 		if ctx.Err() != nil {
 			break
 		}
-
-		select {
-		case <-ctx.Done():
-			break scan
-		case sem <- struct{}{}:
-		}
-
-		wg.Add(1)
-		go func(port int) {
-			defer wg.Done()
-			defer func() { <-sem }()
-
+		g.Go(func() error {
 			traces := p.scanPort(ctx, host, port)
-			if len(traces) == 0 {
-				return
+			if len(traces) > 0 {
+				mu.Lock()
+				results = append(results, traces...)
+				mu.Unlock()
 			}
-
-			mu.Lock()
-			results = append(results, traces...)
-			mu.Unlock()
-		}(port)
+			return nil
+		})
 	}
 
-	wg.Wait()
-
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
 	return dedupe(results), nil
 }
 
