@@ -21,6 +21,13 @@ build:
 	@mkdir -p ${BUILD_DIR}
 	@go build ${LDFLAGS} -o ${BUILD_DIR}/${BINARY_NAME} ./cmd/deeper
 
+# Build the MCP server
+.PHONY: build-mcpd
+build-mcpd:
+	@echo "Building mcpd..."
+	@mkdir -p ${BUILD_DIR}
+	@go build ${LDFLAGS} -o ${BUILD_DIR}/mcpd ./cmd/mcpd
+
 # Run the application
 .PHONY: run
 run:
@@ -183,6 +190,7 @@ docker-run:
 help:
 	@echo "Available targets:"
 	@echo "  build        - Build the application"
+	@echo "  build-mcpd    - Build the MCP server (stdio)"
 	@echo "  run          - Run the application with default input"
 	@echo "  run-custom   - Run with custom input (make run-custom INPUT=<input>)"
 	@echo "  test         - Run all tests"

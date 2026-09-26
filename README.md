@@ -39,6 +39,16 @@ Every scan also renders its trace graph to a self-contained, interactive HTML re
 
 Architecture and performance-tuning details live in [`docs/`](docs/) — this README is deliberately just the front door.
 
+## MCP server
+
+`mcpd` exposes Deeper to MCP clients and AI agents over stdio, so an assistant can run scans and inspect the plugin catalog as tools. Build it with `make build-mcpd` (binary at `./build/mcpd`). It speaks JSON-RPC over stdio, so an MCP client launches it as a subprocess rather than a standalone command.
+
+It registers three tools:
+
+- `scan` — passive OSINT scan of a seed identifier; queries third-party sources only and never contacts the target.
+- `active_scan` — active-recon scan that additionally contacts the target directly (TCP port scan, directory brute force); only use it against targets you are authorized to actively probe.
+- `list_plugins` — list registered plugins grouped by trace type.
+
 ## Responsible use
 
 Deeper is built for legitimate OSINT research and authorized security testing. Make sure you have proper authorization before pointing it at any person, system, or organization you don't own.

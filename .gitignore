@@ -141,6 +141,8 @@ $RECYCLE.BIN/
 
 .env
 build/deeper
+/mcpd
+build/mcpd
 build/diagrams/
 /deeper
 .cursor/
