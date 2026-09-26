@@ -110,6 +110,9 @@ func createEngine() (*engine.Engine, *database.Repository, error) {
 
 	// Override with CLI flags if provided
 	applyCLIOverrides(cfg, timeout, concurrency, rateLimit, logLevel)
+	if scanActive {
+		cfg.ActiveScan = true
+	}
 
 	metricsCollector := metrics.GetGlobalMetrics()
 

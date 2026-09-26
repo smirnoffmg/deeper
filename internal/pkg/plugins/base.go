@@ -18,6 +18,14 @@ func (r Registry) Add(traceType entities.TraceType, plugin DeeperPlugin) {
 	r[traceType] = append(r[traceType], plugin)
 }
 
+// ActivePlugin marks a plugin that contacts the scan target directly (active
+// recon: port scans, directory brute force) rather than querying third-party
+// sources. The catalog registers such a plugin only when active scanning is
+// explicitly enabled (deeper scan --active), so a default scan stays passive.
+type ActivePlugin interface {
+	Active() bool
+}
+
 // TraceMatcher lets a plugin declare, without doing any I/O, whether it
 // would act on a given trace. Plugins implementing it let the processor
 // skip task creation -- and the domain rate-limit wait bundled into

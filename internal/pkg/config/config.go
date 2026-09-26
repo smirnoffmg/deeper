@@ -22,6 +22,10 @@ type Config struct {
 	// Optional plugin credentials (empty = unauthenticated requests)
 	GravatarAPIKey string
 	GitHubToken    string
+
+	// ActiveScan enables plugins that contact the target directly (port
+	// scans, directory brute force). Off by default: a plain scan is passive.
+	ActiveScan bool
 }
 
 // WorkerPoolConfig holds worker pool specific configuration
@@ -198,6 +202,10 @@ func LoadConfig() *Config {
 
 	if githubToken := os.Getenv("DEEPER_GITHUB_TOKEN"); githubToken != "" {
 		config.GitHubToken = githubToken
+	}
+
+	if os.Getenv("DEEPER_ACTIVE_SCAN") == "true" {
+		config.ActiveScan = true
 	}
 
 	return config

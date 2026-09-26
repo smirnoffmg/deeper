@@ -77,6 +77,10 @@ const (
 	Netblock  TraceType = "netblock"
 	Host      TraceType = "host"
 	IPRange   TraceType = "ip_range"
+	// Active-recon and fingerprint traces
+	Technology TraceType = "technology"
+	Port       TraceType = "port"
+	Service    TraceType = "service"
 )
 
 type Trace struct {

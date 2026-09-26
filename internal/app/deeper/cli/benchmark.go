@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
-	"github.com/spf13/cobra"
 	"github.com/smirnoffmg/deeper/internal/pkg/benchmark"
 	"github.com/smirnoffmg/deeper/internal/pkg/config"
+	"github.com/spf13/cobra"
 )
 
 var benchmarkCmd = &cobra.Command{
@@ -20,11 +20,11 @@ var benchmarkCmd = &cobra.Command{
 }
 
 var (
-	benchmarkNumTraces     int
-	benchmarkConcurrency   []int
-	benchmarkRateLimits    []float64
-	benchmarkFailureRates  []float64
-	benchmarkTimeout       time.Duration
+	benchmarkNumTraces    int
+	benchmarkConcurrency  []int
+	benchmarkRateLimits   []float64
+	benchmarkFailureRates []float64
+	benchmarkTimeout      time.Duration
 )
 
 func init() {

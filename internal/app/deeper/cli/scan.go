@@ -21,6 +21,7 @@ var (
 	scanFilters []string
 	scanSave    string
 	scanNoOpen  bool
+	scanActive  bool
 )
 
 // scanCmd represents the scan command
@@ -133,6 +134,7 @@ func init() {
 	scanCmd.Flags().StringSliceVar(&scanFilters, "filter", []string{}, "filter results by trace types (comma-separated)")
 	scanCmd.Flags().StringVar(&scanSave, "save", "", "save results to file")
 	scanCmd.Flags().BoolVar(&scanNoOpen, "no-open", false, "do not auto-open the graph report in a browser")
+	scanCmd.Flags().BoolVar(&scanActive, "active", false, "enable active-recon plugins that contact the target directly (port scan, directory brute force)")
 }
 
 // buildGraphReport maps stored graph rows to graphreport's presentation
