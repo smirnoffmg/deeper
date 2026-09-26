@@ -109,9 +109,10 @@ func (p *Processor) ProcessTrace(ctx context.Context, trace entities.Trace) ([]e
 		// Create task for this plugin
 		task := &workerpool.Task{
 			ID: trace.Value + ":" + plugin.String(),
-			// One plugin is one integration point, so its failures across
-			// all traces must accumulate in one breaker.
-			BreakerKey: plugin.String(),
+			// One plugin is one integration point, so its failures and its
+			// request rate across all traces must share one breaker and one
+			// rate-limit bucket.
+			SourceKey: plugin.String(),
 			Payload: &tasks.TraceProcessingTask{
 				Trace:     trace,
 				PluginKey: plugin.String(),

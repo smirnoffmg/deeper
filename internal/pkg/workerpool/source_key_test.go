@@ -49,20 +49,20 @@ func submitAndWait(t *testing.T, wp *WorkerPool, task *Task) (*TaskResult, error
 }
 
 // Every trace yields a distinct task ID, so a breaker keyed by ID never
-// accumulates failures; tasks sharing a BreakerKey must trip it together.
+// accumulates failures; tasks sharing a SourceKey must trip it together.
 func TestSubmit_BreakerTripsAcrossDistinctTasksSharingKey(t *testing.T) {
 	wp := NewWorkerPool(failingPoolConfig(time.Minute))
 	defer func() { _ = wp.Shutdown(time.Second) }()
 
 	for i := 0; i < 2; i++ {
-		_, err := submitAndWait(t, wp, &Task{ID: fmt.Sprintf("trace-%d:crtsh", i), BreakerKey: "crtsh", Payload: "x"})
+		_, err := submitAndWait(t, wp, &Task{ID: fmt.Sprintf("trace-%d:crtsh", i), SourceKey: "crtsh", Payload: "x"})
 		require.NoError(t, err)
 	}
 
-	_, err := submitAndWait(t, wp, &Task{ID: "trace-new:crtsh", BreakerKey: "crtsh", Payload: "x"})
+	_, err := submitAndWait(t, wp, &Task{ID: "trace-new:crtsh", SourceKey: "crtsh", Payload: "x"})
 	require.ErrorIs(t, err, ErrCircuitBreakerOpen)
 
-	_, err = submitAndWait(t, wp, &Task{ID: "trace-new:github", BreakerKey: "github", Payload: "ok"})
+	_, err = submitAndWait(t, wp, &Task{ID: "trace-new:github", SourceKey: "github", Payload: "ok"})
 	require.NoError(t, err)
 }
 
@@ -71,18 +71,36 @@ func TestSubmit_OpenBreakerLetsProbeThroughAfterRecovery(t *testing.T) {
 	defer func() { _ = wp.Shutdown(time.Second) }()
 
 	for i := 0; i < 2; i++ {
-		_, err := submitAndWait(t, wp, &Task{ID: fmt.Sprintf("t%d", i), BreakerKey: "src", Payload: "x"})
+		_, err := submitAndWait(t, wp, &Task{ID: fmt.Sprintf("t%d", i), SourceKey: "src", Payload: "x"})
 		require.NoError(t, err)
 	}
-	_, err := submitAndWait(t, wp, &Task{ID: "t2", BreakerKey: "src", Payload: "ok"})
+	_, err := submitAndWait(t, wp, &Task{ID: "t2", SourceKey: "src", Payload: "ok"})
 	require.ErrorIs(t, err, ErrCircuitBreakerOpen)
 
 	time.Sleep(80 * time.Millisecond)
 
-	res, err := submitAndWait(t, wp, &Task{ID: "t3", BreakerKey: "src", Payload: "ok"})
+	res, err := submitAndWait(t, wp, &Task{ID: "t3", SourceKey: "src", Payload: "ok"})
 	require.NoError(t, err)
 	require.NoError(t, res.Error)
 
-	_, err = submitAndWait(t, wp, &Task{ID: "t4", BreakerKey: "src", Payload: "ok"})
+	_, err = submitAndWait(t, wp, &Task{ID: "t4", SourceKey: "src", Payload: "ok"})
 	require.NoError(t, err, "a successful probe must close the breaker")
+}
+
+func TestSubmit_RateLimitsEachSourceKeyIndependently(t *testing.T) {
+	cfg := failingPoolConfig(time.Minute)
+	cfg.DefaultRateLimit = rate.Limit(1)
+	cfg.DefaultBurst = 1
+	wp := NewWorkerPool(cfg)
+	defer func() { _ = wp.Shutdown(time.Second) }()
+
+	submitWithin := func(id, key string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+		return wp.Submit(ctx, &Task{ID: id, SourceKey: key, Payload: "ok"})
+	}
+
+	require.NoError(t, submitWithin("a1", "crtsh"))
+	require.NoError(t, submitWithin("b1", "github"), "another plugin must not wait on crtsh's bucket")
+	require.Error(t, submitWithin("a2", "crtsh"), "a second crtsh task within its interval must wait")
 }

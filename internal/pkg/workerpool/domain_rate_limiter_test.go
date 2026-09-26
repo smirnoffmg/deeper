@@ -332,3 +332,19 @@ func TestBackoffTracker(t *testing.T) {
 	assert.False(t, tracker.isInBackoff())
 	assert.Equal(t, time.Duration(0), tracker.getCurrentBackoff())
 }
+
+// Regression test: an unconfigured key used to fall back to the one shared
+// "default" limiter, so every source in a scan competed for a single bucket.
+func TestDomainRateLimiter_UnconfiguredKeysGetOwnBuckets(t *testing.T) {
+	limiter := NewDomainRateLimiter(&DomainRateConfig{
+		Domain:      "default",
+		RateLimit:   1,
+		Burst:       1,
+		BackoffBase: time.Second,
+		BackoffMax:  time.Second,
+	})
+
+	assert.True(t, limiter.Allow("crtsh"))
+	assert.False(t, limiter.Allow("crtsh"))
+	assert.True(t, limiter.Allow("github"))
+}

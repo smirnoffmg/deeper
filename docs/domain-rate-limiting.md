@@ -4,6 +4,16 @@
 
 This document describes the implementation of per-domain rate limiting using token bucket algorithms with automatic backoff for the Deeper OSINT tool. The implementation follows SOLID principles and best practices for maintainable, testable code.
 
+## Which bucket a task uses
+
+The bucket key is the task's `SourceKey`, the same key its circuit breaker uses. The processor sets it to the plugin name, so every plugin is paced on its own: a burst of `crt.sh` lookups never delays a GitHub lookup, however many traces the scan has. Only tasks without a `SourceKey` (generic worker-pool use) fall back to a domain extracted from the payload, as described below.
+
+A key with no explicit configuration gets its own bucket at the default rate (`DEEPER_WORKER_POOL_RATE_LIMIT` / `DEEPER_WORKER_POOL_BURST`). Before this, such keys all shared one `default` bucket, so the whole scan was effectively limited to a single 10 tasks/s stream.
+
+The limit applies to task submission, one task per (trace, plugin) pair. A plugin that fans out many requests inside one task (`social_profiles` probes ~480 sites per username) is bounded by its own concurrency limit, not by this bucket.
+
+`rate-limit --domain` validates its argument as a domain name, so it cannot target a plugin key, and its configuration only lives for the duration of that command.
+
 ## Architecture
 
 ### Core Components

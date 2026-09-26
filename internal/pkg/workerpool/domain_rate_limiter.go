@@ -112,18 +112,27 @@ func (drl *DomainRateLimiter) GetDomainConfig(domain string) *DomainRateConfig {
 
 // Allow checks if a request is allowed for the given domain
 func (drl *DomainRateLimiter) Allow(domain string) bool {
-	drl.mux.RLock()
-	limiter, exists := drl.limiters[domain]
-	drl.mux.RUnlock()
+	return drl.limiterFor(domain).Allow()
+}
 
-	if !exists {
-		// Use default limiter
-		drl.mux.RLock()
-		limiter = drl.limiters[drl.defaultConfig.Domain]
-		drl.mux.RUnlock()
+// limiterFor returns the key's own limiter, creating one at the default rate
+// for a key with no explicit config. Falling back to a single shared default
+// limiter instead would make every source compete for one bucket.
+func (drl *DomainRateLimiter) limiterFor(key string) *rate.Limiter {
+	drl.mux.RLock()
+	limiter, exists := drl.limiters[key]
+	drl.mux.RUnlock()
+	if exists {
+		return limiter
 	}
 
-	return limiter.Allow()
+	drl.mux.Lock()
+	defer drl.mux.Unlock()
+	if limiter, exists = drl.limiters[key]; !exists {
+		limiter = rate.NewLimiter(rate.Limit(drl.defaultConfig.RateLimit), drl.defaultConfig.Burst)
+		drl.limiters[key] = limiter
+	}
+	return limiter
 }
 
 // Wait waits for rate limit allowance with backoff
@@ -146,20 +155,7 @@ func (drl *DomainRateLimiter) Wait(ctx context.Context, domain string) error {
 		}
 	}
 
-	// Try to get rate limit allowance
-	drl.mux.RLock()
-	limiter, exists := drl.limiters[domain]
-	drl.mux.RUnlock()
-
-	if !exists {
-		// Use default limiter
-		drl.mux.RLock()
-		limiter = drl.limiters[drl.defaultConfig.Domain]
-		drl.mux.RUnlock()
-	}
-
-	// Wait for rate limit allowance
-	err := limiter.Wait(ctx)
+	err := drl.limiterFor(domain).Wait(ctx)
 	if err != nil {
 		// Rate limit exceeded, trigger backoff
 		backoffTracker.recordFailure(config)

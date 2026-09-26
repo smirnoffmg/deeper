@@ -35,7 +35,7 @@ package "plugins" {
         Optional. Lets a plugin declare, before
         any task is created, whether it would act
         on a trace -- so Processor can skip the
-        domain rate-limit wait entirely for
+        rate-limit wait entirely for
         guaranteed no-ops.
     end note
 

@@ -24,7 +24,7 @@ loop until queue empty or scan timeout
             Processor -> Processor: skip -- no task submitted,\nno rate-limit wait paid
         else
             Processor -> Pool: Submit(task)
-            Pool -> Pool: dedup check, domain rate-limit wait,\nper-plugin circuit breaker check
+            Pool -> Pool: dedup check, per-plugin rate-limit wait\nand circuit breaker check
             Pool -> Plugin: FollowTrace(ctx, trace)\n(ctx carries TaskTimeout)
             Plugin -> Ext: HTTP request (via shared client)
             Ext --> Plugin: response

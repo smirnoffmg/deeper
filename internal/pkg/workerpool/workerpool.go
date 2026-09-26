@@ -17,10 +17,11 @@ type Task struct {
 	Payload  interface{}
 	Priority int
 	Created  time.Time
-	// BreakerKey names the integration point this task calls; tasks sharing
-	// it share one circuit breaker. Empty falls back to ID, which only makes
-	// sense when the same ID is submitted repeatedly.
-	BreakerKey string
+	// SourceKey names the integration point this task calls; tasks sharing
+	// it share one circuit breaker and one rate-limit bucket. Empty falls
+	// back to ID for the breaker and to the payload's domain for the rate
+	// limit.
+	SourceKey string
 
 	// ReplyTo, if set, receives this task's result directly instead of the
 	// pool-wide result queue. Callers that submit a batch of tasks and expect
@@ -187,14 +188,14 @@ func (wp *WorkerPool) Submit(ctx context.Context, task *Task) error {
 		}
 	}
 
-	if cb := wp.getCircuitBreaker(breakerKey(task)); cb != nil && !cb.Allow() {
-		log.Warn().Str("taskID", task.ID).Str("breaker", breakerKey(task)).Msg("Circuit breaker is open, rejecting task")
+	if cb := wp.getCircuitBreaker(sourceKey(task)); cb != nil && !cb.Allow() {
+		log.Warn().Str("taskID", task.ID).Str("breaker", sourceKey(task)).Msg("Circuit breaker is open, rejecting task")
 		atomic.AddInt64(&wp.metrics.CircuitBreakerTrips, 1)
 		return fmt.Errorf("task %s: %w", task.ID, ErrCircuitBreakerOpen)
 	}
 
 	// Apply domain-specific rate limiting with backoff
-	domain, err := wp.domainRateLimiter.ExtractDomainAndWait(ctx, task)
+	domain, err := wp.waitForRate(ctx, task)
 	if err != nil {
 		log.Debug().Str("taskID", task.ID).Str("domain", domain).Msg("Rate limit exceeded")
 		atomic.AddInt64(&wp.metrics.RateLimitHits, 1)
@@ -315,18 +316,25 @@ func (wp *WorkerPool) recordTaskResult(task *Task, result *TaskResult) {
 		wp.deduplicationCache.MarkProcessed(wp.ctx, task)
 	}
 
-	if cb := wp.getCircuitBreaker(breakerKey(task)); cb != nil {
+	if cb := wp.getCircuitBreaker(sourceKey(task)); cb != nil {
 		before := cb.GetState()
 		cb.RecordResult(result.Error == nil)
 		if after := cb.GetState(); after != before {
-			log.Warn().Str("breaker", breakerKey(task)).Int("from", int(before)).Int("to", int(after)).Msg("Circuit breaker changed state")
+			log.Warn().Str("breaker", sourceKey(task)).Int("from", int(before)).Int("to", int(after)).Msg("Circuit breaker changed state")
 		}
 	}
 }
 
-func breakerKey(task *Task) string {
-	if task.BreakerKey != "" {
-		return task.BreakerKey
+func (wp *WorkerPool) waitForRate(ctx context.Context, task *Task) (string, error) {
+	if task.SourceKey != "" {
+		return task.SourceKey, wp.domainRateLimiter.Wait(ctx, task.SourceKey)
+	}
+	return wp.domainRateLimiter.ExtractDomainAndWait(ctx, task)
+}
+
+func sourceKey(task *Task) string {
+	if task.SourceKey != "" {
+		return task.SourceKey
 	}
 	return task.ID
 }
