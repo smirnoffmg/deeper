@@ -41,7 +41,17 @@ Architecture and performance-tuning details live in [`docs/`](docs/) — this RE
 
 ## MCP server
 
-`mcpd` exposes Deeper to MCP clients and AI agents over stdio, so an assistant can run scans and inspect the plugin catalog as tools. Build it with `make build-mcpd` (binary at `./build/mcpd`). It speaks JSON-RPC over stdio, so an MCP client launches it as a subprocess rather than a standalone command.
+`mcpd` exposes Deeper to MCP clients and AI agents, so an assistant can run scans and inspect the plugin catalog as tools. Build it with `make build-mcpd` (binary at `./build/mcpd`).
+
+By default it runs as a daemon serving the MCP **Streamable HTTP** transport at `/mcp`, so clients connect by URL:
+
+```bash
+./build/mcpd                 # listens on http://127.0.0.1:8765/mcp
+./build/mcpd -addr :9000     # change the bind address
+./build/mcpd -stdio          # use the stdio transport instead (client spawns it as a subprocess)
+```
+
+It binds to loopback by default on purpose: the server can trigger scans — `active_scan` contacts targets directly — so it must not be reachable from the network unless you deliberately put authentication in front of it.
 
 It registers three tools:
 
