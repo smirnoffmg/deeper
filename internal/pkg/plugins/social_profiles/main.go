@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -25,10 +26,29 @@ type SherlockEntry struct {
 	ErrorMsg  []string `json:"errorMsg,omitempty"`
 	ErrorType string   `json:"errorType"`
 	ErrorCode *int     `json:"errorCode,omitempty"`
+
+	RegexCheck string `json:"regexCheck,omitempty"`
+	// regexCheck is nil when the entry has no pattern or its pattern uses
+	// syntax RE2 can't compile (sherlock's are Python regexes).
+	regexCheck *regexp.Regexp
 }
 
 func (e SherlockEntry) BuildUrl(username string) string {
 	return strings.ReplaceAll(e.Url, "{}", username)
+}
+
+func (e SherlockEntry) probeUrl(username string) string {
+	if e.UrlProbe == "" {
+		return e.BuildUrl(username)
+	}
+	return strings.ReplaceAll(e.UrlProbe, "{}", username)
+}
+
+// allows mirrors sherlock's ILLEGAL status: a username the site's own
+// pattern rejects can't exist there, so probing it only invites false
+// positives from sites that answer 200 for anything.
+func (e SherlockEntry) allows(username string) bool {
+	return e.regexCheck == nil || e.regexCheck.MatchString(username)
 }
 
 func (e *SherlockEntry) UnmarshalJSON(data []byte) error {
@@ -54,6 +74,10 @@ func (e *SherlockEntry) UnmarshalJSON(data []byte) error {
 		for _, i := range v {
 			e.ErrorMsg = append(e.ErrorMsg, i.(string))
 		}
+	}
+
+	if e.RegexCheck != "" {
+		e.regexCheck, _ = regexp.Compile(e.RegexCheck)
 	}
 
 	return nil
@@ -149,6 +173,9 @@ func (g *SocialProfilesPlugin) FollowTrace(ctx context.Context, trace entities.T
 		// closure returns nil; errgroup gives bounded concurrency + Wait.
 		if ctx.Err() != nil {
 			break
+		}
+		if !entry.allows(trace.Value) {
+			continue
 		}
 		eg.Go(func() error {
 			if g.checkFn(ctx, entry, trace.Value) {

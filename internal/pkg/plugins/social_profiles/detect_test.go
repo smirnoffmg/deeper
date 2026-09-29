@@ -128,3 +128,13 @@ func TestNewProbeClient_OtherTypesFollowRedirectsNormally(t *testing.T) {
 		})
 	}
 }
+
+func TestDecideExistence_WAFChallengeIsNeverClaimed(t *testing.T) {
+	challenge := `<html><span id="challenge-error-text">Enable JavaScript</span></html>`
+	for _, errorType := range []string{"status_code", "message", "response_url"} {
+		t.Run(errorType, func(t *testing.T) {
+			entry := SherlockEntry{ErrorType: errorType, ErrorMsg: []string{"not found"}}
+			assert.False(t, decideExistence(entry, 200, []byte(challenge)))
+		})
+	}
+}

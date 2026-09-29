@@ -1,6 +1,7 @@
 package social_profiles
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -52,10 +53,31 @@ func decideByMessage(errorMsgs []string, body []byte) bool {
 	return true
 }
 
+// wafFingerprints are copied from sherlock's WAFHitMsgs: challenge pages
+// that come back 200 and would otherwise read as a claimed profile.
+var wafFingerprints = []string{
+	`.loading-spinner{visibility:hidden}body.no-js .challenge-running{display:none}body.dark{background-color:#222;color:#d9d9d9}body.dark a{color:#fff}body.dark a:hover{color:#ee730a;text-decoration:underline}body.dark .lds-ring div{border-color:#999 transparent transparent}body.dark .font-red{color:#b20f03}body.dark`,
+	`<span id="challenge-error-text">`,
+	`AwsWafIntegration.forceRefreshToken`,
+	`{return l.onPageView}}),Object.defineProperty(r,"perimeterxIdentifiers",{enumerable:`,
+}
+
+func isWAFChallenge(body []byte) bool {
+	for _, fp := range wafFingerprints {
+		if bytes.Contains(body, []byte(fp)) {
+			return true
+		}
+	}
+	return false
+}
+
 // decideExistence dispatches to the detection strategy named by the entry's
 // errorType. An unrecognized/empty errorType is treated conservatively as
 // not claimed -- there are currently no such entries in sherlock's data.
 func decideExistence(entry SherlockEntry, status int, body []byte) bool {
+	if isWAFChallenge(body) {
+		return false
+	}
 	switch entry.ErrorType {
 	case errorTypeStatusCode:
 		return decideByStatusCode(entry.ErrorCode, status)
@@ -69,7 +91,7 @@ func decideExistence(entry SherlockEntry, status int, body []byte) bool {
 }
 
 func (e SherlockEntry) CheckUrl(ctx context.Context, username string) bool {
-	url := e.BuildUrl(username)
+	url := e.probeUrl(username)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -86,12 +108,15 @@ func (e SherlockEntry) CheckUrl(ctx context.Context, username string) bool {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	var body []byte
-	if e.ErrorType == errorTypeMessage {
-		body, err = io.ReadAll(resp.Body)
-		if err != nil {
-			return false
-		}
+	// Non-message types only need the body for WAF fingerprints, which sit
+	// near the top of a small challenge page.
+	reader := io.Reader(resp.Body)
+	if e.ErrorType != errorTypeMessage {
+		reader = io.LimitReader(resp.Body, 64<<10)
+	}
+	body, err := io.ReadAll(reader)
+	if err != nil {
+		return false
 	}
 
 	return decideExistence(e, resp.StatusCode, body)

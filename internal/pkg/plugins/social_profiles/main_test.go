@@ -3,6 +3,7 @@ package social_profiles
 import (
 	"context"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -134,4 +135,74 @@ func TestFollowTrace_StopsAtDeadline(t *testing.T) {
 	require.NoError(t, err)
 	require.Less(t, time.Since(start), time.Second)
 	require.LessOrEqual(t, calls.Load(), int64(maxConcurrentChecks+1), "no new probes may start after the deadline")
+}
+
+func TestParseSherlockData_RegexCheckFiltersUsernames(t *testing.T) {
+	data := []byte(`{
+		"SiteC": {
+			"errorType": "status_code",
+			"regexCheck": "^[a-z0-9_]{3,20}$",
+			"url": "https://c.example/{}",
+			"urlMain": "https://c.example/"
+		}
+	}`)
+
+	entries, err := parseSherlockData(data)
+
+	require.NoError(t, err)
+	require.Contains(t, entries, "SiteC")
+	assert.True(t, entries["SiteC"].allows("alsmirn"))
+	assert.False(t, entries["SiteC"].allows("registry-one.example.com"))
+}
+
+// Some sherlock patterns use lookarounds, which RE2 cannot compile; such
+// sites fall back to being probed rather than silently dropped.
+func TestParseSherlockData_UnsupportedRegexCheckAllowsAll(t *testing.T) {
+	data := []byte(`{
+		"SiteD": {
+			"errorType": "status_code",
+			"regexCheck": "^(?!-)[a-z-]+$",
+			"url": "https://d.example/{}",
+			"urlMain": "https://d.example/"
+		}
+	}`)
+
+	entries, err := parseSherlockData(data)
+
+	require.NoError(t, err)
+	require.Contains(t, entries, "SiteD")
+	assert.True(t, entries["SiteD"].allows("anything.at.all"))
+}
+
+func TestFollowTrace_SkipsSitesWhoseRegexCheckRejectsUsername(t *testing.T) {
+	data := []byte(`{
+		"Strict": {"errorType": "status_code", "regexCheck": "^[a-z]+$", "url": "https://strict.example/{}"},
+		"Open":   {"errorType": "status_code", "url": "https://open.example/{}"}
+	}`)
+	entries, err := parseSherlockData(data)
+	require.NoError(t, err)
+
+	var probed []string
+	var mu sync.Mutex
+	checkFn := func(_ context.Context, entry SherlockEntry, username string) bool {
+		mu.Lock()
+		probed = append(probed, entry.Url)
+		mu.Unlock()
+		return true
+	}
+	p := &SocialProfilesPlugin{entries: entries, checkFn: checkFn}
+
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: InputTraceType, Value: "john.doe"})
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"https://open.example/{}"}, probed)
+	assert.Len(t, traces, 1)
+}
+
+func TestProbeUrl_PrefersUrlProbe(t *testing.T) {
+	withProbe := SherlockEntry{Url: "https://site.example/{}", UrlProbe: "https://api.site.example/users/{}"}
+	withoutProbe := SherlockEntry{Url: "https://site.example/{}"}
+
+	assert.Equal(t, "https://api.site.example/users/alice", withProbe.probeUrl("alice"))
+	assert.Equal(t, "https://site.example/alice", withoutProbe.probeUrl("alice"))
 }
