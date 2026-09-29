@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -133,6 +134,88 @@ func TestEngine_ProcessInput_SeedNotReprocessedWhenRediscovered(t *testing.T) {
 		}
 	}
 	assert.Equal(t, 1, count, "seed must appear exactly once even if rediscovered as a child")
+}
+
+// The trace graph holds the canonical domain, but ScanSession.Input keeps the
+// seed exactly as the caller typed it.
+func TestEngine_ProcessInput_DomainSeedCanonicalized_SessionInputPreservesOriginal(t *testing.T) {
+	const originalSeed = "Registry-One.Example.COM."
+	const canonicalSeed = "registry-one.example.com"
+
+	registry := plugins.Registry{}
+	eng, repo := setupEngine(t, registry)
+
+	session, err := repo.CreateScanSession(originalSeed)
+	require.NoError(t, err)
+
+	traces, err := eng.ProcessInput(context.Background(), originalSeed, session.ID)
+	require.NoError(t, err)
+	assert.Contains(t, traces, entities.Trace{Value: canonicalSeed, Type: entities.Domain})
+
+	stored, err := repo.GetScanSession(session.ID)
+	require.NoError(t, err)
+	assert.Equal(t, originalSeed, stored.Input,
+		"ScanSession.Input must keep the seed as the user typed it, not NewTrace's canonical form")
+}
+
+// The length cutoff measures the trimmed value NewTrace receives, so padding
+// around a 1024-byte address must not push it over the limit.
+func TestEngine_ProcessInput_LengthCutoffAppliesAfterTrimSpace(t *testing.T) {
+	const base = "123 Main St"
+	address := base + strings.Repeat("x", 1024-len(base))
+	seed := "  " + address + "  "
+
+	registry := plugins.Registry{}
+	eng, repo := setupEngine(t, registry)
+	session, err := repo.CreateScanSession(seed)
+	require.NoError(t, err)
+
+	traces, err := eng.ProcessInput(context.Background(), seed, session.ID)
+	require.NoError(t, err)
+	assert.Contains(t, traces, entities.Trace{Value: address, Type: entities.Address})
+}
+
+type recordingPlugin struct {
+	name   string
+	called bool
+}
+
+func (p *recordingPlugin) FollowTrace(_ context.Context, _ entities.Trace) ([]entities.Trace, error) {
+	p.called = true
+	return nil, nil
+}
+
+func (p *recordingPlugin) String() string {
+	return p.name
+}
+
+func TestEngine_ProcessInput_HyphenatedDomainSeedOnlyReachesDomainPlugins(t *testing.T) {
+	run := func(t *testing.T, seed string) (domainCalled, usernameCalled bool) {
+		t.Helper()
+		domainPlugin := &recordingPlugin{name: "domain-plugin"}
+		usernamePlugin := &recordingPlugin{name: "username-plugin"}
+		registry := plugins.Registry{
+			entities.Domain:   {domainPlugin},
+			entities.Username: {usernamePlugin},
+		}
+
+		eng, repo := setupEngine(t, registry)
+		session, err := repo.CreateScanSession(seed)
+		require.NoError(t, err)
+
+		_, err = eng.ProcessInput(context.Background(), seed, session.ID)
+		require.NoError(t, err)
+
+		return domainPlugin.called, usernamePlugin.called
+	}
+
+	domainCalled, usernameCalled := run(t, "registry-one.example.com")
+	assert.True(t, domainCalled, "hyphenated domain seed must reach the plugin registered on entities.Domain")
+	assert.False(t, usernameCalled, "hyphenated domain seed must never reach a plugin registered only on entities.Username")
+
+	controlDomainCalled, controlUsernameCalled := run(t, "registryone.example.com")
+	assert.Equal(t, domainCalled, controlDomainCalled, "hyphenated seed must dispatch to the same plugin set as its hyphen-free control")
+	assert.Equal(t, usernameCalled, controlUsernameCalled, "hyphenated seed must dispatch to the same plugin set as its hyphen-free control")
 }
 
 func TestEngine_ProcessInput_MultiParentPersistence(t *testing.T) {

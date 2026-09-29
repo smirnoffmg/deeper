@@ -74,6 +74,12 @@ benchmark:
 	@echo "Running benchmarks..."
 	@go test -bench=. -benchmem ./...
 
+# Tail-latency gate for guessTraceType; skipped by default in `go test ./...`
+.PHONY: test-perf
+test-perf:
+	@echo "Running tail-latency perf gate (DEEPER_PERF=1)..."
+	@DEEPER_PERF=1 go test -run TailLatency -count=1 -v ./internal/pkg/entities/
+
 # Format code
 .PHONY: fmt
 fmt:
@@ -198,6 +204,7 @@ help:
 	@echo "  test-short   - Run tests in short mode"
 	@echo "  test-race    - Run tests with race detector"
 	@echo "  benchmark    - Run benchmarks"
+	@echo "  test-perf    - Run the tail-latency perf gate (DEEPER_PERF=1)"
 	@echo "  fmt          - Format code"
 	@echo "  lint         - Run linter"
 	@echo "  deps         - Install dependencies"

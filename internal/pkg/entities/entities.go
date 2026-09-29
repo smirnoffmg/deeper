@@ -100,101 +100,104 @@ func (t Trace) String() string {
 }
 
 func NewTrace(value string) Trace {
-	return Trace{
-		Value: value,
-		Type:  guessTraceType(value),
+	traceType := guessTraceType(value)
+	if traceType == Domain {
+		return Trace{Value: canonicalHostname(value), Type: traceType}
 	}
+	return Trace{Value: value, Type: traceType}
 }
+
+var (
+	emailRegex     = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+	phoneRegex     = regexp.MustCompile(`^(\+?(\d{1,3}))?[-. ]?(\(?\d{3}\)?[-. ]?)?(\d{3})[-. ]?(\d{4})$`)
+	addressRegex   = regexp.MustCompile(`^\d+\s[A-z]+\s[A-z]+`)
+	ipAddrRegex    = regexp.MustCompile(`^(\d{1,3}\.){3}\d{1,3}$`)
+	urlRegex       = regexp.MustCompile(`^https?://[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+	twitterRegex   = regexp.MustCompile(`^@[a-zA-Z0-9_]{1,15}$`)
+	linkedinRegex  = regexp.MustCompile(`^https?://(www\.)?linkedin\.com/in/[a-zA-Z0-9-_]+/?$`)
+	instagramRegex = regexp.MustCompile(`^@[a-zA-Z0-9._]{1,30}$`)
+	facebookRegex  = regexp.MustCompile(`^https?://(www\.)?facebook\.com/[a-zA-Z0-9._-]+/?$`)
+	tiktokRegex    = regexp.MustCompile(`^@[a-zA-Z0-9._]{1,30}$`)
+	redditRegex    = regexp.MustCompile(`^u/[a-zA-Z0-9-_]{3,20}$`)
+	youtubeRegex   = regexp.MustCompile(`^https?://(www\.)?youtube\.com/channel/[a-zA-Z0-9_-]+/?$`)
+	pinterestRegex = regexp.MustCompile(`^https?://(www\.)?pinterest\.com/[a-zA-Z0-9_]+/?$`)
+	snapchatRegex  = regexp.MustCompile(`^@[a-zA-Z0-9._-]{1,15}$`)
+	tumblrRegex    = regexp.MustCompile(`^[a-zA-Z0-9-]+\.tumblr\.com$`)
+	macAddrRegex   = regexp.MustCompile(`^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$`)
+	bitcoinRegex   = regexp.MustCompile(`^1[a-km-zA-HJ-NP-Z1-9]{25,34}$`)
+)
 
 // Add functions for new trace types
 func isEmail(value string) bool {
-	emailRegex := "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
-	return regexp.MustCompile(emailRegex).MatchString(value)
+	return emailRegex.MatchString(value)
 }
 
 func isPhone(value string) bool {
-	phoneRegex := `^(\+?(\d{1,3}))?[-. ]?(\(?\d{3}\)?[-. ]?)?(\d{3})[-. ]?(\d{4})$`
-	return regexp.MustCompile(phoneRegex).MatchString(value)
+	return phoneRegex.MatchString(value)
 }
 
 func isAddress(value string) bool {
-	addressRegex := `^\d+\s[A-z]+\s[A-z]+`
-	return regexp.MustCompile(addressRegex).MatchString(value)
+	return addressRegex.MatchString(value)
 }
 
 func isIpAddr(value string) bool {
-	ipAddrRegex := `^(\d{1,3}\.){3}\d{1,3}$`
-	return regexp.MustCompile(ipAddrRegex).MatchString(value)
+	return ipAddrRegex.MatchString(value)
 }
 
 func isDomain(value string) bool {
-	domainRegex := `^([a-zA-Z0-9]+\.){1,}([a-zA-Z]{2,})$`
-	return regexp.MustCompile(domainRegex).MatchString(value)
+	return hostnameError(value) == nil
 }
 
 func isUrl(value string) bool {
-	urlRegex := `^https?://[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`
-	return regexp.MustCompile(urlRegex).MatchString(value)
+	return urlRegex.MatchString(value)
 }
 
 func isTwitterHandle(value string) bool {
-	twitterRegex := `^@[a-zA-Z0-9_]{1,15}$`
-	return regexp.MustCompile(twitterRegex).MatchString(value)
+	return twitterRegex.MatchString(value)
 }
 
 func isLinkedinProfile(value string) bool {
-	linkedinRegex := `^https?://(www\.)?linkedin\.com/in/[a-zA-Z0-9-_]+/?$`
-	return regexp.MustCompile(linkedinRegex).MatchString(value)
+	return linkedinRegex.MatchString(value)
 }
 
 func isInstagramHandle(value string) bool {
-	instagramRegex := `^@[a-zA-Z0-9._]{1,30}$`
-	return regexp.MustCompile(instagramRegex).MatchString(value)
+	return instagramRegex.MatchString(value)
 }
 
 func isFacebookProfile(value string) bool {
-	facebookRegex := `^https?://(www\.)?facebook\.com/[a-zA-Z0-9._-]+/?$`
-	return regexp.MustCompile(facebookRegex).MatchString(value)
+	return facebookRegex.MatchString(value)
 }
 
 func isTikTokHandle(value string) bool {
-	tiktokRegex := `^@[a-zA-Z0-9._]{1,30}$`
-	return regexp.MustCompile(tiktokRegex).MatchString(value)
+	return tiktokRegex.MatchString(value)
 }
 
 func isRedditUsername(value string) bool {
-	redditRegex := `^u/[a-zA-Z0-9-_]{3,20}$`
-	return regexp.MustCompile(redditRegex).MatchString(value)
+	return redditRegex.MatchString(value)
 }
 
 func isYouTubeChannel(value string) bool {
-	youtubeRegex := `^https?://(www\.)?youtube\.com/channel/[a-zA-Z0-9_-]+/?$`
-	return regexp.MustCompile(youtubeRegex).MatchString(value)
+	return youtubeRegex.MatchString(value)
 }
 
 func isPinterestProfile(value string) bool {
-	pinterestRegex := `^https?://(www\.)?pinterest\.com/[a-zA-Z0-9_]+/?$`
-	return regexp.MustCompile(pinterestRegex).MatchString(value)
+	return pinterestRegex.MatchString(value)
 }
 
 func isSnapchatHandle(value string) bool {
-	snapchatRegex := `^@[a-zA-Z0-9._-]{1,15}$`
-	return regexp.MustCompile(snapchatRegex).MatchString(value)
+	return snapchatRegex.MatchString(value)
 }
 
 func isTumblrBlog(value string) bool {
-	tumblrRegex := `^[a-zA-Z0-9-]+\.tumblr\.com$`
-	return regexp.MustCompile(tumblrRegex).MatchString(value)
+	return tumblrRegex.MatchString(value)
 }
 
 func isMacAddr(value string) bool {
-	macAddrRegex := `^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$`
-	return regexp.MustCompile(macAddrRegex).MatchString(value)
+	return macAddrRegex.MatchString(value)
 }
 
 func isBitcoinAddress(value string) bool {
-	bitcoinRegex := `^1[a-km-zA-HJ-NP-Z1-9]{25,34}$`
-	return regexp.MustCompile(bitcoinRegex).MatchString(value)
+	return bitcoinRegex.MatchString(value)
 }
 
 // IsEmail reports whether value is shaped like a real email address.
@@ -235,7 +238,24 @@ func IsRealEmail(value string) bool {
 	return !reservedEmailDomains[domain]
 }
 
+// logRollback is the only place a Username rollback is logged, so each
+// rollback produces exactly one log line whichever path it takes.
+func logRollback(value, reason string) {
+	log.Info().
+		Str("value", truncateForLog(value)).
+		Int("value_len", len(value)).
+		Str("reason", reason).
+		Msg("could not guess trace type, rolling back to username")
+}
+
 func guessTraceType(value string) TraceType {
+	// Must precede every matcher: each one scans the whole input, so this is
+	// what bounds classification cost for untrusted values.
+	if len(value) > maxClassifiableLen {
+		logRollback(value, errValueTooLong.Error())
+		return Username
+	}
+
 	switch {
 	case isEmail(value):
 		return Email
@@ -274,7 +294,7 @@ func guessTraceType(value string) TraceType {
 	case isBitcoinAddress(value):
 		return BitcoinAddress
 	default:
-		log.Info().Msgf("Could not guess trace type for value %s, assuming it's username", value)
+		logRollback(value, hostnameError(value).Error())
 		return Username
 	}
 }
