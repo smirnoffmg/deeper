@@ -29,6 +29,11 @@ type Task struct {
 	// set this — GetResult()'s shared queue has no per-caller correlation, so
 	// concurrent submitters would otherwise consume each other's results.
 	ReplyTo chan *TaskResult
+
+	// submitCtx is the context passed to Submit. Workers run on the pool's own
+	// context, so without it cancelling a scan left its plugins running until
+	// TaskTimeout.
+	submitCtx context.Context
 }
 
 // TaskResult represents the result of processing a task
@@ -202,8 +207,8 @@ func (wp *WorkerPool) Submit(ctx context.Context, task *Task) error {
 		return fmt.Errorf("rate limit exceeded for domain %s: %w", domain, err)
 	}
 
-	// Set creation time
 	task.Created = time.Now()
+	task.submitCtx = ctx
 
 	// Submit task to queue
 	select {
@@ -367,6 +372,9 @@ func (w *Worker) processTask(task *Task) {
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(w.pool.ctx, w.pool.config.TaskTimeout)
 	defer cancel()
+	if task.submitCtx != nil {
+		defer context.AfterFunc(task.submitCtx, cancel)()
+	}
 
 	// Process the task
 	var (

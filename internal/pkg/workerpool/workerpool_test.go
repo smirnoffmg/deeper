@@ -480,3 +480,36 @@ func TestWorkerPool_ReplyTo_SlowTaskStillDelivers(t *testing.T) {
 		t.Fatal("result was never delivered to ReplyTo — regressed to the dropped-result bug")
 	}
 }
+
+func TestWorkerPool_CancellingSubmitContextCancelsRunningTask(t *testing.T) {
+	started := make(chan struct{})
+	config := &Config{
+		MaxWorkers:       1,
+		QueueSize:        10,
+		DefaultRateLimit: rate.Limit(100),
+		DefaultBurst:     10,
+		TaskTimeout:      time.Minute,
+		TaskHandler: func(ctx context.Context, task *Task) (interface{}, error) {
+			close(started)
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+
+	wp := NewWorkerPool(config)
+	defer func() { _ = wp.Shutdown(5 * time.Second) }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	replyTo := make(chan *TaskResult, 1)
+	require.NoError(t, wp.Submit(ctx, &Task{ID: "long-task", Payload: "payload", ReplyTo: replyTo}))
+
+	<-started
+	cancel()
+
+	select {
+	case result := <-replyTo:
+		assert.ErrorIs(t, result.Error, context.Canceled)
+	case <-time.After(2 * time.Second):
+		t.Fatal("task kept running after its submitter's context was cancelled")
+	}
+}

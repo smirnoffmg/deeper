@@ -442,3 +442,34 @@ func (p *chainOnValuePlugin) FollowTrace(_ context.Context, trace entities.Trace
 func (p *chainOnValuePlugin) String() string {
 	return p.name
 }
+
+type hangingPlugin struct{}
+
+func (hangingPlugin) FollowTrace(ctx context.Context, _ entities.Trace) ([]entities.Trace, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func (hangingPlugin) String() string { return "hanging" }
+
+func TestEngine_ProcessInput_StopsWhenContextCancelled(t *testing.T) {
+	eng, repo := setupEngine(t, plugins.Registry{testEngineTraceType: {hangingPlugin{}}})
+	session, err := repo.CreateScanSession("root")
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := eng.ProcessInput(ctx, "root", session.ID)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		assert.ErrorIs(t, err, context.DeadlineExceeded)
+	case <-time.After(3 * time.Second):
+		t.Fatal("ProcessInput did not return after its context was cancelled")
+	}
+}

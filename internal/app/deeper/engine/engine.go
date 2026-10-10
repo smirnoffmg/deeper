@@ -94,6 +94,12 @@ func (e *Engine) ProcessInput(ctx context.Context, input string, scanID int64) (
 		}
 
 		processedCount += len(batch)
+
+		// processBatch logs and skips a cancelled trace like any other failure,
+		// so without this an interrupted scan reports itself as complete.
+		if err := ctx.Err(); err != nil {
+			return allTraces, err
+		}
 	}
 
 	log.Info().Msgf("Processing complete. Processed %d traces, found %d unique traces",
