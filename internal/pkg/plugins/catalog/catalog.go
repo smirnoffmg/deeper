@@ -33,6 +33,7 @@ import (
 	"github.com/smirnoffmg/deeper/internal/pkg/plugins/launchpad_profile"
 	"github.com/smirnoffmg/deeper/internal/pkg/plugins/linuxorgru_profile"
 	"github.com/smirnoffmg/deeper/internal/pkg/plugins/live_host"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins/namesake"
 	"github.com/smirnoffmg/deeper/internal/pkg/plugins/port_scan"
 	"github.com/smirnoffmg/deeper/internal/pkg/plugins/social_profiles"
 	"github.com/smirnoffmg/deeper/internal/pkg/plugins/subdomain_sources"
@@ -75,6 +76,7 @@ func New(cfg *config.Config) (plugins.Registry, error) {
 		keybase_profile.NewPlugin(cfg),
 		launchpad_profile.NewPlugin(cfg),
 		linuxorgru_profile.NewPlugin(cfg),
+		namesake.NewPlugin(cfg),
 		social_profiles.NewSocialProfilesPlugin(),
 		subdomains.NewPlugin(cfg),
 		telegram_profile.NewPlugin(cfg),

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
@@ -116,4 +117,22 @@ func fetchGPGKeys(ctx context.Context, fetcher keyFetcher, username, token strin
 		}
 	}
 	return traces, nil
+}
+
+// githubLogin returns the login of a github.com account URL. Repo URLs share
+// the Github trace type and are left to github_identity.
+func githubLogin(value string) (string, bool) {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil {
+		return "", false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host != "github.com" && host != "www.github.com" {
+		return "", false
+	}
+	login := strings.Trim(parsed.Path, "/")
+	if login == "" || strings.Contains(login, "/") {
+		return "", false
+	}
+	return login, true
 }

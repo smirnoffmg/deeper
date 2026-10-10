@@ -167,6 +167,36 @@ func TestParsePage_DropsUnrelatedGithubRepo(t *testing.T) {
 	}
 }
 
+// An account link opens the whole account (every repo, every contributor)
+// to github_identity, so a substring owner match like go.dev -> google is
+// not enough to admit it.
+func TestParsePage_DropsSubstringOwnerGithubAccount(t *testing.T) {
+	body := []byte(`<html><body>
+		<a href="https://github.com/google">google</a>
+		<a href="https://github.com/golang">golang</a>
+	</body></html>`)
+
+	traces, _ := parsePage(body, "https://go.dev/", "go.dev")
+
+	for _, trace := range traces {
+		assert.NotEqual(t, entities.Github, trace.Type, trace.Value)
+	}
+}
+
+func TestParsePage_KeepsExactOwnerGithubAccount(t *testing.T) {
+	body := []byte(`<html><body>
+		<a href="https://github.com/CodeScoring/">our account</a>
+	</body></html>`)
+
+	traces, _ := parsePage(body, "https://codescoring.ru/", "codescoring.ru")
+
+	var types []entities.TraceType
+	for _, trace := range traces {
+		types = append(types, trace.Type)
+	}
+	assert.Contains(t, types, entities.Github)
+}
+
 func TestParsePage_KeepsInScopeGithubRepo(t *testing.T) {
 	body := []byte(`<html><body>
 		<a href="https://github.com/CodeScoring/awesome-open-source-licensing">our repo</a>

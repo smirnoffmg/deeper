@@ -111,8 +111,11 @@ func (t Trace) String() string {
 
 func NewTrace(value string) Trace {
 	traceType := guessTraceType(value)
-	if traceType == Domain {
+	switch traceType {
+	case Domain:
 		return Trace{Value: canonicalHostname(value), Type: traceType}
+	case Github:
+		return Trace{Value: canonicalGithubURL(value), Type: traceType}
 	}
 	return Trace{Value: value, Type: traceType}
 }
@@ -135,7 +138,20 @@ var (
 	tumblrRegex    = regexp.MustCompile(`^[a-zA-Z0-9-]+\.tumblr\.com$`)
 	macAddrRegex   = regexp.MustCompile(`^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$`)
 	bitcoinRegex   = regexp.MustCompile(`^1[a-km-zA-HJ-NP-Z1-9]{25,34}$`)
+	githubRegex    = regexp.MustCompile(`^(?i:https?://)?(?i:www\.)?(?i:github\.com)/([a-zA-Z0-9][a-zA-Z0-9-]{0,38})(?:/([a-zA-Z0-9._-]+))?/?$`)
 )
+
+// githubReserved are first path segments GitHub keeps for its own pages, so
+// they never name an account or an owner.
+var githubReserved = map[string]bool{
+	"about": true, "apps": true, "codespaces": true, "collections": true,
+	"contact": true, "customer-stories": true, "enterprise": true, "events": true,
+	"explore": true, "features": true, "issues": true, "join": true, "login": true,
+	"logout": true, "marketplace": true, "new": true, "notifications": true,
+	"orgs": true, "organizations": true, "pricing": true, "pulls": true,
+	"search": true, "security": true, "settings": true, "site": true,
+	"sponsors": true, "topics": true, "trending": true, "users": true,
+}
 
 // Add functions for new trace types
 func isEmail(value string) bool {
@@ -156,6 +172,37 @@ func isIpAddr(value string) bool {
 
 func isDomain(value string) bool {
 	return hostnameError(value) == nil
+}
+
+func isGithubAccountURL(value string) bool {
+	_, ok := githubPath(value)
+	return ok
+}
+
+// canonicalGithubURL lowercases because GitHub resolves logins and repo
+// names case-insensitively, while engine nodes are keyed by the exact value.
+func canonicalGithubURL(value string) string {
+	path, _ := githubPath(value)
+	return "https://github.com/" + path
+}
+
+func githubPath(value string) (string, bool) {
+	m := githubRegex.FindStringSubmatch(value)
+	if m == nil {
+		return "", false
+	}
+	owner := strings.ToLower(m[1])
+	if githubReserved[owner] {
+		return "", false
+	}
+	if m[2] == "" {
+		return owner, true
+	}
+	repo := strings.TrimSuffix(strings.ToLower(m[2]), ".git")
+	if strings.Trim(repo, ".") == "" {
+		return "", false
+	}
+	return owner + "/" + repo, true
 }
 
 func isUrl(value string) bool {
@@ -275,6 +322,8 @@ func guessTraceType(value string) TraceType {
 		return IpAddr
 	case isDomain(value):
 		return Domain
+	case isGithubAccountURL(value):
+		return Github
 	case isUrl(value):
 		return Url
 	case isAddress(value):

@@ -20,7 +20,7 @@ func TestFollowTrace_WrongType(t *testing.T) {
 	assert.Nil(t, traces)
 }
 
-func TestFollowTrace_ValidUsername(t *testing.T) {
+func TestFollowTrace_GithubAccount(t *testing.T) {
 	fetcher := &fakeProfileFetcher{
 		responses: map[string]fakeResponse{
 			profileURL("alsmirn"): {status: http.StatusOK, body: `{"company": "CodeScoring", "blog": "https://codescoring.com"}`},
@@ -28,7 +28,7 @@ func TestFollowTrace_ValidUsername(t *testing.T) {
 	}
 	p := &GitHubProfilePlugin{fetcher: fetcher}
 
-	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Username, Value: "alsmirn"})
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Github, Value: "https://github.com/alsmirn"})
 	require.NoError(t, err)
 	require.Len(t, traces, 2)
 }
@@ -37,7 +37,7 @@ func TestFollowTrace_SetsAuthorizationWhenTokenPresent(t *testing.T) {
 	fetcher := &fakeProfileFetcher{}
 	p := &GitHubProfilePlugin{fetcher: fetcher, token: "ghp_secret"}
 
-	_, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Username, Value: "alsmirn"})
+	_, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Github, Value: "https://github.com/alsmirn"})
 	require.NoError(t, err)
 	require.NotEmpty(t, fetcher.reqs)
 	for _, req := range fetcher.reqs {
@@ -49,7 +49,7 @@ func TestFollowTrace_NoAuthorizationWhenTokenAbsent(t *testing.T) {
 	fetcher := &fakeProfileFetcher{}
 	p := &GitHubProfilePlugin{fetcher: fetcher}
 
-	_, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Username, Value: "alsmirn"})
+	_, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Github, Value: "https://github.com/alsmirn"})
 	require.NoError(t, err)
 	require.NotEmpty(t, fetcher.reqs)
 	for _, req := range fetcher.reqs {
@@ -57,18 +57,52 @@ func TestFollowTrace_NoAuthorizationWhenTokenAbsent(t *testing.T) {
 	}
 }
 
-func TestRegister_RegistersUnderUsername(t *testing.T) {
+func TestRegister_RegistersUnderGithub(t *testing.T) {
 	p := NewPlugin(config.DefaultConfig())
 	registry := plugins.Registry{}
 	require.NoError(t, p.Register(registry))
 
 	found := false
-	for _, registered := range registry[entities.Username] {
+	for _, registered := range registry[entities.Github] {
 		if registered == p {
 			found = true
 		}
 	}
 	assert.True(t, found)
+}
+
+func TestFollowTrace_IgnoresNonAccountTraces(t *testing.T) {
+	for _, trace := range []entities.Trace{
+		{Type: entities.Username, Value: "alsmirn"},
+		{Type: entities.Github, Value: "https://github.com/alsmirn/repo"},
+		{Type: entities.Github, Value: "https://gitlab.com/alsmirn"},
+		{Type: entities.Github, Value: "https://github.com/"},
+	} {
+		fetcher := &fakeProfileFetcher{}
+		p := &GitHubProfilePlugin{fetcher: fetcher}
+
+		traces, err := p.FollowTrace(context.Background(), trace)
+
+		require.NoError(t, err, trace.Value)
+		assert.Nil(t, traces, trace.Value)
+		assert.Empty(t, fetcher.reqs, trace.Value)
+		assert.False(t, p.Matches(trace), trace.Value)
+	}
+}
+
+func TestFollowTrace_AcceptsAccountURLShapes(t *testing.T) {
+	for _, value := range []string{"https://github.com/alsmirn", "https://www.github.com/alsmirn/", "http://GitHub.com/alsmirn"} {
+		fetcher := &fakeProfileFetcher{}
+		p := &GitHubProfilePlugin{fetcher: fetcher}
+		trace := entities.Trace{Type: entities.Github, Value: value}
+
+		_, err := p.FollowTrace(context.Background(), trace)
+
+		require.NoError(t, err, value)
+		require.NotEmpty(t, fetcher.reqs, value)
+		assert.Contains(t, fetcher.reqs[0].URL.Path, "/users/alsmirn", value)
+		assert.True(t, p.Matches(trace), value)
+	}
 }
 
 func TestString(t *testing.T) {

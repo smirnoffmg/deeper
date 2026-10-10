@@ -253,6 +253,9 @@ func githubOwnerInScope(href, seedHost string) bool {
 	if !ok {
 		return false
 	}
+	if isGithubAccountLink(href) {
+		return ownerIsTarget(owner, seedHost)
+	}
 	return ownerMatchesTarget(owner, seedHost)
 }
 

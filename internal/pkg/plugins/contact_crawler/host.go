@@ -48,22 +48,35 @@ func sameSite(seedHost, candidateHost string) bool {
 // otherwise pulled in an unrelated open-source project's contributors
 // (pgbouncer) and fanned that out across dozens of social platforms.
 func ownerMatchesTarget(owner, seedHost string) bool {
+	owner, label, ok := ownerAndLabel(owner, seedHost)
+	return ok && (label == owner || strings.Contains(owner, label) || strings.Contains(label, owner))
+}
+
+// ownerIsTarget is the strict form for account links: an account node feeds
+// coderepos, so github_identity would mine every one of its repos, and a
+// substring match (go.dev -> google) is too loose for that fan-out.
+func ownerIsTarget(owner, seedHost string) bool {
+	owner, label, ok := ownerAndLabel(owner, seedHost)
+	return ok && label == owner
+}
+
+func ownerAndLabel(owner, seedHost string) (string, string, bool) {
 	owner = strings.ToLower(strings.TrimSpace(owner))
 	if owner == "" {
-		return false
+		return "", "", false
 	}
 
 	domain, ok := registrableDomain(seedHost)
 	if !ok {
-		return false
+		return "", "", false
 	}
 
 	label := strings.ToLower(strings.SplitN(domain, ".", 2)[0])
 	if label == "" {
-		return false
+		return "", "", false
 	}
 
-	return label == owner || strings.Contains(owner, label) || strings.Contains(label, owner)
+	return owner, label, true
 }
 
 // githubRepoOwner extracts the owner/org segment from a github.com URL
@@ -81,4 +94,12 @@ func githubRepoOwner(href string) (string, bool) {
 	}
 
 	return segments[0], true
+}
+
+func isGithubAccountLink(href string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(href))
+	if err != nil {
+		return false
+	}
+	return !strings.Contains(strings.Trim(parsed.Path, "/"), "/")
 }

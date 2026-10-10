@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 	"github.com/smirnoffmg/deeper/internal/pkg/config"
@@ -13,8 +15,6 @@ import (
 	deeperhttp "github.com/smirnoffmg/deeper/internal/pkg/http"
 	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 )
-
-const InputTraceType = entities.Username
 
 type repoFetcher interface {
 	Do(req *http.Request) (*http.Response, error)
@@ -30,7 +30,8 @@ func NewPlugin(cfg *config.Config) *CodeRepositoriesPlugin {
 }
 
 func (g *CodeRepositoriesPlugin) Register(r plugins.Registry) error {
-	r.Add(InputTraceType, g)
+	r.Add(entities.Github, g)
+	r.Add(entities.Username, g)
 	return nil
 }
 
@@ -51,43 +52,91 @@ type GitLabRepo struct {
 }
 
 func (g *CodeRepositoriesPlugin) FollowTrace(ctx context.Context, trace entities.Trace) ([]entities.Trace, error) {
-	if trace.Type != InputTraceType {
-		return nil, nil
+	findings, err := g.FollowEvidence(ctx, trace)
+	if err != nil {
+		return nil, err
 	}
+	var traces []entities.Trace
+	for _, f := range findings {
+		traces = append(traces, f.Trace)
+	}
+	return traces, nil
+}
 
-	var newTraces []entities.Trace
+// FollowEvidence lists GitHub repos only for a Github account, where the
+// account is already established. A bare handle reaches GitLab and Bitbucket
+// by name alone, so those repos are a namesake guess.
+func (g *CodeRepositoriesPlugin) FollowEvidence(ctx context.Context, trace entities.Trace) ([]plugins.Finding, error) {
+	switch trace.Type {
+	case entities.Github:
+		login, ok := githubLogin(trace.Value)
+		if !ok {
+			return nil, nil
+		}
+		repos, err := fetchGitHubRepos(ctx, g.fetcher, login, g.githubToken)
+		if err != nil {
+			return nil, err
+		}
+		return withEvidence(repos, entities.StrengthStrong, "repos of github.com/"+login), nil
+	case entities.Username:
+		return g.followNamesake(ctx, trace.Value)
+	}
+	return nil, nil
+}
+
+func (g *CodeRepositoriesPlugin) followNamesake(ctx context.Context, username string) ([]plugins.Finding, error) {
+	var findings []plugins.Finding
 	var errs []error
 
-	githubRepos, err := fetchGitHubRepos(ctx, g.fetcher, trace.Value, g.githubToken)
+	bitbucketRepos, err := fetchBitbucketRepos(ctx, g.fetcher, username)
 	if err == nil {
-		newTraces = append(newTraces, githubRepos...)
+		findings = append(findings, withEvidence(bitbucketRepos, entities.StrengthWeak, "namesake: bitbucket.org/"+username+" has repos")...)
 	} else {
 		errs = append(errs, err)
 	}
 
-	bitbucketRepos, err := fetchBitbucketRepos(ctx, g.fetcher, trace.Value)
+	gitlabRepos, err := fetchGitLabRepos(ctx, g.fetcher, username)
 	if err == nil {
-		newTraces = append(newTraces, bitbucketRepos...)
-	} else {
-		errs = append(errs, err)
-	}
-
-	gitlabRepos, err := fetchGitLabRepos(ctx, g.fetcher, trace.Value)
-	if err == nil {
-		newTraces = append(newTraces, gitlabRepos...)
+		findings = append(findings, withEvidence(gitlabRepos, entities.StrengthWeak, "namesake: gitlab.com/"+username+" has repos")...)
 	} else {
 		errs = append(errs, err)
 	}
 
 	// The processor drops every trace when a plugin errors, so one host
-	// rate-limiting must not discard repos the other hosts did return.
-	if len(newTraces) > 0 {
+	// rate-limiting must not discard repos the other host did return.
+	if len(findings) > 0 {
 		for _, err := range errs {
-			log.Warn().Err(err).Str("username", trace.Value).Msg("code repository source failed, skipping")
+			log.Warn().Err(err).Str("username", username).Msg("code repository source failed, skipping")
 		}
-		return newTraces, nil
+		return findings, nil
 	}
 	return nil, errors.Join(errs...)
+}
+
+func withEvidence(traces []entities.Trace, strength entities.Strength, basis string) []plugins.Finding {
+	findings := make([]plugins.Finding, 0, len(traces))
+	for _, t := range traces {
+		findings = append(findings, plugins.Finding{Trace: t, Strength: strength, Basis: basis})
+	}
+	return findings
+}
+
+// githubLogin returns the login of a github.com account URL. Repo URLs share
+// the Github trace type and are left to github_identity.
+func githubLogin(value string) (string, bool) {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil {
+		return "", false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host != "github.com" && host != "www.github.com" {
+		return "", false
+	}
+	login := strings.Trim(parsed.Path, "/")
+	if login == "" || strings.Contains(login, "/") {
+		return "", false
+	}
+	return login, true
 }
 
 func getRepoList(ctx context.Context, fetcher repoFetcher, host, url, token string, into any) error {

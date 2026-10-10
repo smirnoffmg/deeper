@@ -19,15 +19,28 @@ func NewPlugin(cfg *config.Config) *GitHubProfilePlugin {
 }
 
 func (p *GitHubProfilePlugin) Register(r plugins.Registry) error {
-	r.Add(entities.Username, p)
+	r.Add(entities.Github, p)
 	return nil
 }
 
+func (p *GitHubProfilePlugin) Matches(trace entities.Trace) bool {
+	_, ok := accountLogin(trace)
+	return ok
+}
+
+func accountLogin(trace entities.Trace) (string, bool) {
+	if trace.Type != entities.Github {
+		return "", false
+	}
+	return githubLogin(trace.Value)
+}
+
 func (p *GitHubProfilePlugin) FollowTrace(ctx context.Context, trace entities.Trace) ([]entities.Trace, error) {
-	if trace.Type != entities.Username {
+	login, ok := accountLogin(trace)
+	if !ok {
 		return nil, nil
 	}
-	return fetchProfile(ctx, p.fetcher, trace.Value, p.token)
+	return fetchProfile(ctx, p.fetcher, login, p.token)
 }
 
 func (p GitHubProfilePlugin) String() string {

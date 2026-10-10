@@ -47,78 +47,125 @@ const (
 	gitlabURL    = "https://gitlab.com/api/v4/users/alice/projects?per_page=100"
 )
 
-var aliceUsername = entities.Trace{Type: entities.Username, Value: "alice"}
+var (
+	aliceUsername = entities.Trace{Type: entities.Username, Value: "alice"}
+	aliceGithub   = entities.Trace{Type: entities.Github, Value: "https://github.com/alice"}
+)
 
-func follow(t *testing.T, responses map[string]fakeResponse) ([]entities.Trace, *fakeRepoFetcher, error) {
+func follow(t *testing.T, trace entities.Trace, responses map[string]fakeResponse) ([]plugins.Finding, *fakeRepoFetcher, error) {
 	t.Helper()
 	fetcher := &fakeRepoFetcher{t: t, responses: responses}
 	p := &CodeRepositoriesPlugin{fetcher: fetcher}
-	traces, err := p.FollowTrace(context.Background(), aliceUsername)
-	return traces, fetcher, err
+	findings, err := p.FollowEvidence(context.Background(), trace)
+	return findings, fetcher, err
 }
 
-func TestFollowTrace_ListsReposFromAllHosts(t *testing.T) {
-	traces, _, err := follow(t, map[string]fakeResponse{
-		githubURL:    {status: http.StatusOK, body: `[{"html_url":"https://github.com/alice/a"}]`},
+func requestedURLs(f *fakeRepoFetcher) []string {
+	var urls []string
+	for _, req := range f.reqs {
+		urls = append(urls, req.URL.String())
+	}
+	return urls
+}
+
+func TestFollowEvidence_GithubAccountListsOnlyGitHubReposAsStrong(t *testing.T) {
+	findings, fetcher, err := follow(t, aliceGithub, map[string]fakeResponse{
+		githubURL: {status: http.StatusOK, body: `[{"html_url":"https://github.com/alice/a"}]`},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, []plugins.Finding{{
+		Trace:    entities.Trace{Type: entities.Repository, Value: "https://github.com/alice/a"},
+		Strength: entities.StrengthStrong,
+		Basis:    "repos of github.com/alice",
+	}}, findings)
+	assert.Equal(t, []string{githubURL}, requestedURLs(fetcher))
+}
+
+func TestFollowEvidence_UsernameListsOnlyGitLabAndBitbucketAsWeak(t *testing.T) {
+	findings, fetcher, err := follow(t, aliceUsername, map[string]fakeResponse{
 		bitbucketURL: {status: http.StatusOK, body: `{"values":[{"links":{"html":{"href":"https://bitbucket.org/alice/b"}}}]}`},
 		gitlabURL:    {status: http.StatusOK, body: `[{"web_url":"https://gitlab.com/alice/c"}]`},
 	})
 
 	require.NoError(t, err)
-	assert.ElementsMatch(t, []entities.Trace{
-		{Type: entities.Repository, Value: "https://github.com/alice/a"},
-		{Type: entities.Repository, Value: "https://bitbucket.org/alice/b"},
-		{Type: entities.Repository, Value: "https://gitlab.com/alice/c"},
-	}, traces)
+	assert.ElementsMatch(t, []plugins.Finding{
+		{
+			Trace:    entities.Trace{Type: entities.Repository, Value: "https://bitbucket.org/alice/b"},
+			Strength: entities.StrengthWeak,
+			Basis:    "namesake: bitbucket.org/alice has repos",
+		},
+		{
+			Trace:    entities.Trace{Type: entities.Repository, Value: "https://gitlab.com/alice/c"},
+			Strength: entities.StrengthWeak,
+			Basis:    "namesake: gitlab.com/alice has repos",
+		},
+	}, findings)
+	assert.NotContains(t, requestedURLs(fetcher), githubURL)
 }
 
-func TestFollowTrace_IgnoresNonUsernameTraces(t *testing.T) {
-	fetcher := &fakeRepoFetcher{t: t}
-	p := &CodeRepositoriesPlugin{fetcher: fetcher}
+func TestFollowEvidence_IgnoresNonAccountTraces(t *testing.T) {
+	for _, trace := range []entities.Trace{
+		{Type: entities.Github, Value: "https://github.com/alice/repo"},
+		{Type: entities.Domain, Value: "example.com"},
+	} {
+		findings, fetcher, err := follow(t, trace, nil)
 
-	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Domain, Value: "example.com"})
+		require.NoError(t, err, trace.Value)
+		assert.Empty(t, findings, trace.Value)
+		assert.Empty(t, fetcher.reqs, trace.Value)
+	}
+}
+
+func TestFollowTrace_StripsEvidence(t *testing.T) {
+	p := &CodeRepositoriesPlugin{fetcher: &fakeRepoFetcher{t: t, responses: map[string]fakeResponse{
+		gitlabURL: {status: http.StatusOK, body: `[{"web_url":"https://gitlab.com/alice/c"}]`},
+	}}}
+
+	traces, err := p.FollowTrace(context.Background(), aliceUsername)
 
 	require.NoError(t, err)
-	assert.Empty(t, traces)
-	assert.Empty(t, fetcher.reqs)
+	assert.Equal(t, []entities.Trace{{Type: entities.Repository, Value: "https://gitlab.com/alice/c"}}, traces)
 }
 
-func TestFollowTrace_NotFoundEverywhereIsNoTracesNoError(t *testing.T) {
-	traces, _, err := follow(t, nil)
+func TestFollowEvidence_NotFoundEverywhereIsNoFindingsNoError(t *testing.T) {
+	for _, trace := range []entities.Trace{aliceUsername, aliceGithub} {
+		findings, _, err := follow(t, trace, nil)
 
-	require.NoError(t, err)
-	assert.Empty(t, traces)
+		require.NoError(t, err, trace.Type)
+		assert.Empty(t, findings, trace.Type)
+	}
 }
 
-func TestFollowTrace_RateLimitedEverywhereIsError(t *testing.T) {
+func TestFollowEvidence_RateLimitedEverywhereIsError(t *testing.T) {
 	limited := fakeResponse{status: http.StatusTooManyRequests, body: `[{"web_url":"https://gitlab.com/alice/ghost"}]`}
-	traces, _, err := follow(t, map[string]fakeResponse{
-		githubURL:    limited,
+	findings, _, err := follow(t, aliceUsername, map[string]fakeResponse{
 		bitbucketURL: limited,
 		gitlabURL:    limited,
 	})
 
 	assert.Error(t, err)
-	assert.Empty(t, traces)
+	assert.Empty(t, findings)
 }
 
-func TestFollowTrace_ForbiddenBodyNotParsedAsRepos(t *testing.T) {
-	traces, _, err := follow(t, map[string]fakeResponse{
+func TestFollowEvidence_ForbiddenBodyNotParsedAsRepos(t *testing.T) {
+	findings, _, err := follow(t, aliceGithub, map[string]fakeResponse{
 		githubURL: {status: http.StatusForbidden, body: `[{"html_url":"https://github.com/alice/ghost"}]`},
 	})
 
 	assert.Error(t, err)
-	assert.Empty(t, traces)
+	assert.Empty(t, findings)
 }
 
-func TestFollowTrace_OneSourceFailingKeepsOthersRepos(t *testing.T) {
-	traces, _, err := follow(t, map[string]fakeResponse{
+func TestFollowEvidence_OneSourceFailingKeepsOthersRepos(t *testing.T) {
+	findings, _, err := follow(t, aliceUsername, map[string]fakeResponse{
 		bitbucketURL: {status: http.StatusOK, body: `{"values":[{"links":{"html":{"href":"https://bitbucket.org/alice/b"}}}]}`},
 		gitlabURL:    {status: http.StatusTooManyRequests, body: `[{"web_url":"https://gitlab.com/alice/ghost"}]`},
 	})
 
 	require.NoError(t, err)
-	assert.Equal(t, []entities.Trace{{Type: entities.Repository, Value: "https://bitbucket.org/alice/b"}}, traces)
+	require.Len(t, findings, 1)
+	assert.Equal(t, entities.Trace{Type: entities.Repository, Value: "https://bitbucket.org/alice/b"}, findings[0].Trace)
 }
 
 func authorizationByURL(f *fakeRepoFetcher) map[string]string {
@@ -129,11 +176,13 @@ func authorizationByURL(f *fakeRepoFetcher) map[string]string {
 	return headers
 }
 
-func TestFollowTrace_SendsGitHubTokenOnlyToGitHub(t *testing.T) {
+func TestFollowEvidence_SendsGitHubTokenOnlyToGitHub(t *testing.T) {
 	fetcher := &fakeRepoFetcher{t: t}
 	p := &CodeRepositoriesPlugin{fetcher: fetcher, githubToken: "ghp_secret"}
 
-	_, err := p.FollowTrace(context.Background(), aliceUsername)
+	_, err := p.FollowEvidence(context.Background(), aliceGithub)
+	require.NoError(t, err)
+	_, err = p.FollowEvidence(context.Background(), aliceUsername)
 	require.NoError(t, err)
 
 	headers := authorizationByURL(fetcher)
@@ -145,8 +194,8 @@ func TestFollowTrace_SendsGitHubTokenOnlyToGitHub(t *testing.T) {
 	assert.Empty(t, headers[gitlabURL])
 }
 
-func TestFollowTrace_NoGitHubAuthorizationWhenTokenAbsent(t *testing.T) {
-	_, fetcher, err := follow(t, nil)
+func TestFollowEvidence_NoGitHubAuthorizationWhenTokenAbsent(t *testing.T) {
+	_, fetcher, err := follow(t, aliceGithub, nil)
 
 	require.NoError(t, err)
 	headers := authorizationByURL(fetcher)
@@ -154,10 +203,11 @@ func TestFollowTrace_NoGitHubAuthorizationWhenTokenAbsent(t *testing.T) {
 	assert.Empty(t, headers[githubURL])
 }
 
-func TestRegister_RegistersUnderUsername(t *testing.T) {
+func TestRegister_RegistersUnderUsernameAndGithub(t *testing.T) {
 	p := NewPlugin(config.DefaultConfig())
 	registry := plugins.Registry{}
 	require.NoError(t, p.Register(registry))
 
 	assert.Contains(t, registry[entities.Username], plugins.DeeperPlugin(p))
+	assert.Contains(t, registry[entities.Github], plugins.DeeperPlugin(p))
 }

@@ -122,3 +122,52 @@ func TestRank_OrdersWeakStrongProof(t *testing.T) {
 	assert.Less(t, rank(entities.StrengthWeak), rank(entities.StrengthStrong))
 	assert.Less(t, rank(entities.StrengthStrong), rank(entities.StrengthProof))
 }
+
+func seededState(seed entities.Trace) (map[entities.Trace]*nodeState, map[entities.Trace][]entities.Discovery) {
+	nodes := map[entities.Trace]*nodeState{seed: {strength: entities.StrengthProof, queued: true}}
+	return nodes, map[entities.Trace][]entities.Discovery{}
+}
+
+func TestAdmit_NamesakeGithubAccountExpandsOnceAndStopsAtItsRepos(t *testing.T) {
+	handle := entities.Trace{Type: entities.Username, Value: "alice"}
+	account := entities.Trace{Type: entities.Github, Value: "https://github.com/alice"}
+	repo := entities.Trace{Type: entities.Repository, Value: "https://github.com/alice/a"}
+	nodes, children := seededState(handle)
+
+	assert.Equal(t, []entities.Trace{account}, admit(nodes, children, edge(handle, account, entities.StrengthWeak)))
+	assert.Empty(t, admit(nodes, children, edge(account, repo, entities.StrengthStrong)))
+	assert.Equal(t, nodeState{strength: entities.StrengthWeak, queued: false}, *nodes[repo])
+}
+
+func TestAdmit_StrongGithubAccountReachesCommitAuthorsAccounts(t *testing.T) {
+	email := entities.Trace{Type: entities.Email, Value: "alice@example.org"}
+	account := entities.Trace{Type: entities.Github, Value: "https://github.com/alice"}
+	repo := entities.Trace{Type: entities.Repository, Value: "https://github.com/alice/a"}
+	login := entities.Trace{Type: entities.Username, Value: "bob"}
+	loginAccount := entities.Trace{Type: entities.Github, Value: "https://github.com/bob"}
+	nodes, children := seededState(email)
+
+	assert.Equal(t, []entities.Trace{account}, admit(nodes, children, edge(email, account, entities.StrengthStrong)))
+	assert.Equal(t, []entities.Trace{repo}, admit(nodes, children, edge(account, repo, entities.StrengthStrong)))
+	assert.Equal(t, []entities.Trace{login}, admit(nodes, children, edge(repo, login, entities.StrengthStrong)))
+	assert.Equal(t, []entities.Trace{loginAccount}, admit(nodes, children, edge(repo, loginAccount, entities.StrengthStrong)))
+	assert.Equal(t, nodeState{strength: entities.StrengthStrong, queued: true}, *nodes[loginAccount])
+}
+
+func TestAdmit_LoginNamesakeHopIsWeakButLoginAccountStaysStrong(t *testing.T) {
+	repo := entities.Trace{Type: entities.Repository, Value: "https://github.com/alice/a"}
+	login := entities.Trace{Type: entities.Username, Value: "bob"}
+	loginAccount := entities.Trace{Type: entities.Github, Value: "https://github.com/bob"}
+	habr := entities.Trace{Type: entities.SocialGeneric, Value: "https://habr.com/ru/users/bob/"}
+	habrCompany := entities.Trace{Type: entities.Company, Value: "Bob Corp"}
+	nodes, children := seededState(repo)
+	admit(nodes, children, edge(repo, login, entities.StrengthStrong))
+
+	assert.Equal(t, []entities.Trace{loginAccount}, admit(nodes, children, edge(login, loginAccount, entities.StrengthWeak)))
+	assert.Equal(t, []entities.Trace{habr}, admit(nodes, children, edge(login, habr, entities.StrengthWeak)))
+	assert.Empty(t, admit(nodes, children, edge(habr, habrCompany, entities.StrengthStrong)))
+
+	admit(nodes, children, edge(repo, loginAccount, entities.StrengthStrong))
+	assert.Equal(t, entities.StrengthStrong, nodes[loginAccount].strength, "the typed commit-login edge must win over the namesake edge")
+	assert.Equal(t, entities.StrengthWeak, nodes[habr].strength)
+}

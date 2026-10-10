@@ -256,7 +256,7 @@ func TestAuthorsToFindings(t *testing.T) {
 
 	findings := authorsToFindings(authors)
 
-	names, emails, usernames := 0, 0, 0
+	names, emails, usernames, githubs := 0, 0, 0, 0
 	for _, f := range findings {
 		tr := f.Trace
 		switch tr.Type {
@@ -266,12 +266,16 @@ func TestAuthorsToFindings(t *testing.T) {
 			emails++
 		case entities.Username:
 			usernames++
+		case entities.Github:
+			githubs++
+			assert.Equal(t, "https://github.com/alsmirn", tr.Value)
 		}
 	}
 
 	assert.Equal(t, 2, names)
 	assert.Equal(t, 2, emails)
 	assert.Equal(t, 1, usernames)
+	assert.Equal(t, 1, githubs)
 }
 
 // Regression: git falls back to placeholder addresses like "you@example.com"
@@ -421,11 +425,15 @@ func TestAuthorsToFindings_CoAuthorWeakAuthorStrong(t *testing.T) {
 	for _, f := range findings {
 		byValue[f.Trace.Value] = f
 	}
-	require.Len(t, byValue, 5)
+	require.Len(t, byValue, 6)
 	for _, v := range []string{"Maksim Smirnov", "smirnoffmg@gmail.com", "smirnoffmg"} {
 		assert.Equal(t, entities.StrengthStrong, byValue[v].Strength, v)
 		assert.Equal(t, "commit author", byValue[v].Basis, v)
 	}
+	account := byValue["https://github.com/smirnoffmg"]
+	assert.Equal(t, entities.Github, account.Trace.Type)
+	assert.Equal(t, entities.StrengthStrong, account.Strength)
+	assert.Equal(t, "commit author login", account.Basis)
 	for _, v := range []string{"Cursor", "cursoragent@cursor.com"} {
 		assert.Equal(t, entities.StrengthWeak, byValue[v].Strength, v)
 		assert.Equal(t, "co-authored-by trailer", byValue[v].Basis, v)
@@ -444,4 +452,18 @@ func TestAuthorsToFindings_AuthorSeenAfterCoAuthorIsStrong(t *testing.T) {
 	for _, f := range findings {
 		assert.Equal(t, entities.StrengthStrong, f.Strength, f.Trace.Value)
 	}
+}
+
+// The account node must match the lowercased form entities.NewTrace gives a
+// github.com seed, or the engine keeps two nodes for one account.
+func TestAuthorsToFindings_LoginAccountIsLowercased(t *testing.T) {
+	findings := authorsToFindings([]commitAuthor{{Name: "Maksim", Login: "SmirnoffMG"}})
+
+	var accounts []string
+	for _, f := range findings {
+		if f.Trace.Type == entities.Github {
+			accounts = append(accounts, f.Trace.Value)
+		}
+	}
+	assert.Equal(t, []string{"https://github.com/smirnoffmg"}, accounts)
 }

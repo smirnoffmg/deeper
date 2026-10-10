@@ -100,6 +100,7 @@ func TestFollowTrace_ValidRepo(t *testing.T) {
 	assert.True(t, types[entities.Name])
 	assert.True(t, types[entities.Email])
 	assert.True(t, types[entities.Username])
+	assert.True(t, types[entities.Github])
 }
 
 func TestFollowTrace_RepositoryTraceTypeIsFollowed(t *testing.T) {
@@ -310,11 +311,12 @@ func TestFollowEvidence_OwnerStrongCoAuthorWeakNoSystemIdentity(t *testing.T) {
 		strengths[f.Trace.Value] = f.Strength
 	}
 	assert.Equal(t, map[string]entities.Strength{
-		"Maksim Smirnov":        entities.StrengthStrong,
-		"smirnoffmg@gmail.com":  entities.StrengthStrong,
-		"smirnoffmg":            entities.StrengthStrong,
-		"Claude Opus 4.8":       entities.StrengthWeak,
-		"noreply@anthropic.com": entities.StrengthWeak,
+		"Maksim Smirnov":                entities.StrengthStrong,
+		"smirnoffmg@gmail.com":          entities.StrengthStrong,
+		"smirnoffmg":                    entities.StrengthStrong,
+		"https://github.com/smirnoffmg": entities.StrengthStrong,
+		"Claude Opus 4.8":               entities.StrengthWeak,
+		"noreply@anthropic.com":         entities.StrengthWeak,
 	}, strengths)
 }
 

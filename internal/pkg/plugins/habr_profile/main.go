@@ -18,15 +18,19 @@ func NewPlugin(cfg *config.Config) *HabrProfilePlugin {
 }
 
 func (p *HabrProfilePlugin) Register(r plugins.Registry) error {
-	r.Add(entities.Username, p)
+	r.Add(entities.SocialGeneric, p)
 	return nil
 }
 
+func (p *HabrProfilePlugin) Matches(trace entities.Trace) bool {
+	return trace.Type == entities.SocialGeneric && extractHandle(trace.Value) != ""
+}
+
 func (p *HabrProfilePlugin) FollowTrace(ctx context.Context, trace entities.Trace) ([]entities.Trace, error) {
-	if trace.Type != entities.Username {
+	if !p.Matches(trace) {
 		return nil, nil
 	}
-	return fetchProfile(ctx, p.fetcher, trace.Value)
+	return fetchProfile(ctx, p.fetcher, extractHandle(trace.Value))
 }
 
 func (p HabrProfilePlugin) String() string {

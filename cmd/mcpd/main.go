@@ -25,7 +25,7 @@ import (
 )
 
 type scanInput struct {
-	Seed string `json:"seed" jsonschema:"the seed identifier to scan: email, username, domain, IP, or company name"`
+	Seed string `json:"seed" jsonschema:"the seed identifier to scan: email, username, domain, IP, company name, or a GitHub account URL (https://github.com/<login>)"`
 }
 
 type listPluginsInput struct {
@@ -41,7 +41,7 @@ func newServer(svc *scanservice.Service) *mcp.Server {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "scan",
-		Description: "Passive OSINT scan of a seed identifier (email, username, domain, IP, or company). Queries third-party sources only; does not contact the target directly.",
+		Description: "Passive OSINT scan of a seed identifier (email, username, domain, IP, or company). Queries third-party sources only; does not contact the target directly. A bare username only guesses which platform accounts are the target's, so their data is recorded as weak and not expanded further; to assert that a GitHub account is the target's, seed its URL (https://github.com/<login>) instead.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in scanInput) (*mcp.CallToolResult, scanservice.Result, error) {
 		result, err := svc.Scan(ctx, in.Seed, false)
 		return nil, result, err

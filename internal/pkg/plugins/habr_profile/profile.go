@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
@@ -13,6 +14,24 @@ import (
 
 type profileFetcher interface {
 	Get(ctx context.Context, url string) (*http.Response, error)
+}
+
+// extractHandle returns the user alias from a habr.com profile URL
+// (https://habr.com/{lang}/users/{alias}/, lang optional), or "" if it
+// doesn't match.
+func extractHandle(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Hostname() != "habr.com" {
+		return ""
+	}
+	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(parts) == 3 && len(parts[0]) == 2 {
+		parts = parts[1:]
+	}
+	if len(parts) != 2 || parts[0] != "users" || parts[1] == "" {
+		return ""
+	}
+	return parts[1]
 }
 
 func fetchProfile(ctx context.Context, fetcher profileFetcher, username string) ([]entities.Trace, error) {

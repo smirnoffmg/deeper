@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -360,5 +361,84 @@ func (p *chainProfilePlugin) FollowTrace(_ context.Context, _ entities.Trace) ([
 }
 
 func (p *chainProfilePlugin) String() string {
+	return p.name
+}
+
+type valueRecorder struct {
+	name string
+	mu   sync.Mutex
+	seen []string
+}
+
+func (p *valueRecorder) FollowTrace(_ context.Context, trace entities.Trace) ([]entities.Trace, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.seen = append(p.seen, trace.Value)
+	return nil, nil
+}
+
+func (p *valueRecorder) String() string {
+	return p.name
+}
+
+func TestEngine_ProcessInput_GithubAccountSeedExpandsItsRepos(t *testing.T) {
+	repo := entities.Trace{Type: entities.Repository, Value: "https://github.com/alice/a"}
+	repoRecorder := &recordingPlugin{name: "repo-recorder"}
+	usernamePlugin := &recordingPlugin{name: "username-plugin"}
+	registry := plugins.Registry{
+		entities.Github:     {&evidencePlugin{name: "repos-fake", findings: []plugins.Finding{{Trace: repo, Strength: entities.StrengthStrong}}}},
+		entities.Repository: {repoRecorder},
+		entities.Username:   {usernamePlugin},
+	}
+
+	eng, repoDB := setupEngine(t, registry)
+	session, err := repoDB.CreateScanSession("https://github.com/alice")
+	require.NoError(t, err)
+
+	traces, err := eng.ProcessInput(context.Background(), "https://github.com/alice", session.ID)
+	require.NoError(t, err)
+
+	assert.Contains(t, traces, entities.Trace{Type: entities.Github, Value: "https://github.com/alice"})
+	assert.True(t, repoRecorder.called, "a proof Github seed must expand its strong repos")
+	assert.False(t, usernamePlugin.called, "a Github seed must not fall back to bare-username plugins")
+}
+
+func TestEngine_ProcessInput_DomainChainReachesCommitLoginAccount(t *testing.T) {
+	repoURL := entities.Trace{Type: entities.Github, Value: "https://github.com/acme/tool"}
+	login := entities.Trace{Type: entities.Username, Value: "bob"}
+	loginAccount := entities.Trace{Type: entities.Github, Value: "https://github.com/bob"}
+	accountRecorder := &valueRecorder{name: "github-profile-fake"}
+	registry := plugins.Registry{
+		entities.Domain: {&evidencePlugin{name: "crawler-fake", findings: []plugins.Finding{{Trace: repoURL, Strength: entities.StrengthStrong}}}},
+		entities.Github: {
+			&chainOnValuePlugin{name: "identity-fake", input: repoURL.Value, outputs: []entities.Trace{login, loginAccount}},
+			accountRecorder,
+		},
+	}
+
+	eng, repoDB := setupEngine(t, registry)
+	session, err := repoDB.CreateScanSession("acme.example")
+	require.NoError(t, err)
+
+	_, err = eng.ProcessInput(context.Background(), "acme.example", session.ID)
+	require.NoError(t, err)
+
+	assert.Contains(t, accountRecorder.seen, loginAccount.Value)
+}
+
+type chainOnValuePlugin struct {
+	name    string
+	input   string
+	outputs []entities.Trace
+}
+
+func (p *chainOnValuePlugin) FollowTrace(_ context.Context, trace entities.Trace) ([]entities.Trace, error) {
+	if trace.Value != p.input {
+		return nil, nil
+	}
+	return p.outputs, nil
+}
+
+func (p *chainOnValuePlugin) String() string {
 	return p.name
 }

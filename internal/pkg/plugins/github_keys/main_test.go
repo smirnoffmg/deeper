@@ -29,7 +29,7 @@ func TestFollowTrace_MergesSSHAndGPGTraces(t *testing.T) {
 	}
 	p := &GitHubKeysPlugin{fetcher: fetcher}
 
-	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Username, Value: "alsmirn"})
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Github, Value: "https://github.com/alsmirn"})
 	require.NoError(t, err)
 	require.Len(t, traces, 3)
 }
@@ -43,7 +43,7 @@ func TestFollowTrace_SSHFailureDoesNotBlockGPG(t *testing.T) {
 	}
 	p := &GitHubKeysPlugin{fetcher: fetcher}
 
-	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Username, Value: "u"})
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Github, Value: "https://github.com/u"})
 	require.NoError(t, err)
 	require.Len(t, traces, 1)
 	assert.Equal(t, entities.PGPKey, traces[0].Type)
@@ -58,7 +58,7 @@ func TestFollowTrace_GPGFailureDoesNotBlockSSH(t *testing.T) {
 	}
 	p := &GitHubKeysPlugin{fetcher: fetcher}
 
-	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Username, Value: "u"})
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Github, Value: "https://github.com/u"})
 	require.NoError(t, err)
 	require.Len(t, traces, 1)
 	assert.Equal(t, entities.SSHKey, traces[0].Type)
@@ -68,7 +68,7 @@ func TestFollowTrace_SetsAuthorizationWhenTokenPresent(t *testing.T) {
 	fetcher := &fakeKeyFetcher{}
 	p := &GitHubKeysPlugin{fetcher: fetcher, token: "ghp_secret"}
 
-	_, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Username, Value: "alsmirn"})
+	_, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Github, Value: "https://github.com/alsmirn"})
 	require.NoError(t, err)
 	require.NotEmpty(t, fetcher.reqs)
 	for _, req := range fetcher.reqs {
@@ -80,7 +80,7 @@ func TestFollowTrace_NoAuthorizationWhenTokenAbsent(t *testing.T) {
 	fetcher := &fakeKeyFetcher{}
 	p := &GitHubKeysPlugin{fetcher: fetcher}
 
-	_, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Username, Value: "alsmirn"})
+	_, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Github, Value: "https://github.com/alsmirn"})
 	require.NoError(t, err)
 	require.NotEmpty(t, fetcher.reqs)
 	for _, req := range fetcher.reqs {
@@ -88,18 +88,52 @@ func TestFollowTrace_NoAuthorizationWhenTokenAbsent(t *testing.T) {
 	}
 }
 
-func TestRegister_RegistersUnderUsername(t *testing.T) {
+func TestRegister_RegistersUnderGithub(t *testing.T) {
 	p := NewPlugin(config.DefaultConfig())
 	registry := plugins.Registry{}
 	require.NoError(t, p.Register(registry))
 
 	found := false
-	for _, registered := range registry[entities.Username] {
+	for _, registered := range registry[entities.Github] {
 		if registered == p {
 			found = true
 		}
 	}
 	assert.True(t, found)
+}
+
+func TestFollowTrace_IgnoresNonAccountTraces(t *testing.T) {
+	for _, trace := range []entities.Trace{
+		{Type: entities.Username, Value: "alsmirn"},
+		{Type: entities.Github, Value: "https://github.com/alsmirn/repo"},
+		{Type: entities.Github, Value: "https://gitlab.com/alsmirn"},
+		{Type: entities.Github, Value: "https://github.com/"},
+	} {
+		fetcher := &fakeKeyFetcher{}
+		p := &GitHubKeysPlugin{fetcher: fetcher}
+
+		traces, err := p.FollowTrace(context.Background(), trace)
+
+		require.NoError(t, err, trace.Value)
+		assert.Nil(t, traces, trace.Value)
+		assert.Empty(t, fetcher.reqs, trace.Value)
+		assert.False(t, p.Matches(trace), trace.Value)
+	}
+}
+
+func TestFollowTrace_AcceptsAccountURLShapes(t *testing.T) {
+	for _, value := range []string{"https://github.com/alsmirn", "https://www.github.com/alsmirn/", "http://GitHub.com/alsmirn"} {
+		fetcher := &fakeKeyFetcher{}
+		p := &GitHubKeysPlugin{fetcher: fetcher}
+		trace := entities.Trace{Type: entities.Github, Value: value}
+
+		_, err := p.FollowTrace(context.Background(), trace)
+
+		require.NoError(t, err, value)
+		require.NotEmpty(t, fetcher.reqs, value)
+		assert.Contains(t, fetcher.reqs[0].URL.Path, "/users/alsmirn", value)
+		assert.True(t, p.Matches(trace), value)
+	}
 }
 
 func TestString(t *testing.T) {

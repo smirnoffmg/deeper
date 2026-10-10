@@ -29,3 +29,24 @@ func TestNew_RegistersEachPluginOncePerTraceType(t *testing.T) {
 		assert.NotEmptyf(t, registry[tt], "no plugin follows %s", tt)
 	}
 }
+
+func TestNew_NamesakeBridgesUsernameToAccountPlugins(t *testing.T) {
+	registry, _ := New(config.DefaultConfig())
+
+	pluginsOn := func(tt entities.TraceType) map[string]bool {
+		names := map[string]bool{}
+		for _, p := range registry[tt] {
+			names[p.String()] = true
+		}
+		return names
+	}
+
+	assert.True(t, pluginsOn(entities.Username)["NamesakePlugin"])
+	for _, name := range []string{"GitHubProfilePlugin", "GitHubKeysPlugin", "HabrProfilePlugin"} {
+		assert.Falsef(t, pluginsOn(entities.Username)[name], "%s must not run on a bare username", name)
+	}
+	for _, name := range []string{"GitHubProfilePlugin", "GitHubKeysPlugin", "CodeRepositoriesPlugin", "GitHubIdentityPlugin"} {
+		assert.Truef(t, pluginsOn(entities.Github)[name], "%s must follow a Github account", name)
+	}
+	assert.True(t, pluginsOn(entities.SocialGeneric)["HabrProfilePlugin"])
+}

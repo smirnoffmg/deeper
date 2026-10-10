@@ -35,6 +35,8 @@ make build
 ./build/deeper scan <email | username | domain | company>
 ```
 
+A bare username only shows that *someone* registered that handle on a platform, so the accounts it reaches are weak evidence: Deeper records what they say but does not follow it further. If you know which GitHub account is the target's, seed it directly — `./build/deeper scan https://github.com/<login>` — and its profile, keys, repositories and commit authors are expanded in full.
+
 Every scan also renders its trace graph to a self-contained, interactive HTML report (`~/.deeper/reports/scan-<id>.html`) and, for the default table output, opens it in your browser — pan, zoom, hover for details, click a trace to isolate its neighbors. Pass `--no-open` to skip the auto-open (e.g. in CI) without losing the saved report.
 
 Architecture and performance-tuning details live in [`docs/`](docs/) — this README is deliberately just the front door.

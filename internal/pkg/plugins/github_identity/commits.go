@@ -329,6 +329,9 @@ func authorsToFindings(authors []commitAuthor) []plugins.Finding {
 			add(entities.Email, author.Email, strength, basis)
 		}
 		add(entities.Username, author.Login, strength, basis)
+		if author.Login != "" {
+			add(entities.Github, "https://github.com/"+strings.ToLower(author.Login), strength, "commit author login")
+		}
 	}
 
 	return findings
