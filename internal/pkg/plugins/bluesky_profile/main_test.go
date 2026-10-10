@@ -13,7 +13,7 @@ import (
 )
 
 func TestFollowTrace_WrongType(t *testing.T) {
-	p := &BlueskyProfilePlugin{fetcher: &fakeProfileFetcher{}}
+	p := &BlueskyProfilePlugin{fetcher: &fakeProfileFetcher{t: t}}
 
 	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Domain, Value: "example.com"})
 	require.NoError(t, err)
@@ -21,7 +21,7 @@ func TestFollowTrace_WrongType(t *testing.T) {
 }
 
 func TestFollowTrace_NonBlueskySocialGenericIgnored(t *testing.T) {
-	p := &BlueskyProfilePlugin{fetcher: &fakeProfileFetcher{}}
+	p := &BlueskyProfilePlugin{fetcher: &fakeProfileFetcher{t: t}}
 
 	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.SocialGeneric, Value: "https://keybase.io/alsmirn"})
 	require.NoError(t, err)
@@ -30,8 +30,9 @@ func TestFollowTrace_NonBlueskySocialGenericIgnored(t *testing.T) {
 
 func TestFollowTrace_BlueskyURL(t *testing.T) {
 	fetcher := &fakeProfileFetcher{
+		t: t,
 		responses: map[string]fakeResponse{
-			profileURL("jay"): {status: http.StatusOK, body: `{"handle":"jay.bsky.team","displayName":"Jay"}`},
+			profileURL("jay.bsky.social"): {status: http.StatusOK, body: `{"handle":"jay.bsky.team","displayName":"Jay"}`},
 		},
 	}
 	p := &BlueskyProfilePlugin{fetcher: fetcher}
@@ -72,4 +73,18 @@ func TestRegister_RegistersUnderSocialGeneric(t *testing.T) {
 
 func TestString(t *testing.T) {
 	assert.Equal(t, "BlueskyProfilePlugin", (&BlueskyProfilePlugin{}).String())
+}
+
+func TestFollowTrace_CustomDomainProfileURL(t *testing.T) {
+	fetcher := &fakeProfileFetcher{
+		t: t,
+		responses: map[string]fakeResponse{
+			profileURL("alice.example.com"): {status: http.StatusOK, body: `{"handle":"alice.example.com","displayName":"Alice"}`},
+		},
+	}
+	p := &BlueskyProfilePlugin{fetcher: fetcher}
+
+	traces, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.SocialGeneric, Value: "https://bsky.app/profile/alice.example.com"})
+	require.NoError(t, err)
+	assert.Contains(t, traces, entities.Trace{Type: entities.Name, Value: "Alice"})
 }

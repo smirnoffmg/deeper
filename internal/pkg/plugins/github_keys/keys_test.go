@@ -20,6 +20,12 @@ type fakeResponse struct {
 type fakeKeyFetcher struct {
 	responses map[string]fakeResponse
 	lastURL   string
+	reqs      []*http.Request
+}
+
+func (f *fakeKeyFetcher) Do(req *http.Request) (*http.Response, error) {
+	f.reqs = append(f.reqs, req)
+	return f.Get(req.Context(), req.URL.String())
 }
 
 func (f *fakeKeyFetcher) Get(_ context.Context, url string) (*http.Response, error) {
@@ -46,7 +52,7 @@ func TestFetchSSHKeys_SingleKey(t *testing.T) {
 		},
 	}
 
-	traces, err := fetchSSHKeys(context.Background(), fetcher, "torvalds")
+	traces, err := fetchSSHKeys(context.Background(), fetcher, "torvalds", "")
 	require.NoError(t, err)
 	require.Len(t, traces, 1)
 	assert.Equal(t, entities.SSHKey, traces[0].Type)
@@ -60,7 +66,7 @@ func TestFetchSSHKeys_MultipleKeys(t *testing.T) {
 		},
 	}
 
-	traces, err := fetchSSHKeys(context.Background(), fetcher, "u")
+	traces, err := fetchSSHKeys(context.Background(), fetcher, "u", "")
 	require.NoError(t, err)
 	require.Len(t, traces, 2)
 }
@@ -72,7 +78,7 @@ func TestFetchSSHKeys_EmptyList(t *testing.T) {
 		},
 	}
 
-	traces, err := fetchSSHKeys(context.Background(), fetcher, "u")
+	traces, err := fetchSSHKeys(context.Background(), fetcher, "u", "")
 	require.NoError(t, err)
 	assert.Empty(t, traces)
 }
@@ -84,7 +90,7 @@ func TestFetchSSHKeys_NonOKStatusReturnsError(t *testing.T) {
 		},
 	}
 
-	_, err := fetchSSHKeys(context.Background(), fetcher, "u")
+	_, err := fetchSSHKeys(context.Background(), fetcher, "u", "")
 	assert.Error(t, err)
 }
 
@@ -98,7 +104,7 @@ func TestFetchGPGKeys_VerifiedEmailIncluded(t *testing.T) {
 		},
 	}
 
-	traces, err := fetchGPGKeys(context.Background(), fetcher, "wycats")
+	traces, err := fetchGPGKeys(context.Background(), fetcher, "wycats", "")
 	require.NoError(t, err)
 	require.Len(t, traces, 2)
 
@@ -120,7 +126,7 @@ func TestFetchGPGKeys_UnverifiedEmailExcluded(t *testing.T) {
 		},
 	}
 
-	traces, err := fetchGPGKeys(context.Background(), fetcher, "u")
+	traces, err := fetchGPGKeys(context.Background(), fetcher, "u", "")
 	require.NoError(t, err)
 
 	for _, tr := range traces {
@@ -140,7 +146,7 @@ func TestFetchGPGKeys_MultipleKeys(t *testing.T) {
 		},
 	}
 
-	traces, err := fetchGPGKeys(context.Background(), fetcher, "u")
+	traces, err := fetchGPGKeys(context.Background(), fetcher, "u", "")
 	require.NoError(t, err)
 	assert.Len(t, traces, 4)
 }
@@ -152,7 +158,7 @@ func TestFetchSSHKeys_WhitespaceOnlyKeySkipped(t *testing.T) {
 		},
 	}
 
-	traces, err := fetchSSHKeys(context.Background(), fetcher, "u")
+	traces, err := fetchSSHKeys(context.Background(), fetcher, "u", "")
 	require.NoError(t, err)
 	assert.Empty(t, traces)
 }
@@ -164,7 +170,7 @@ func TestFetchGPGKeys_WhitespaceOnlyKeyIDSkipped(t *testing.T) {
 		},
 	}
 
-	traces, err := fetchGPGKeys(context.Background(), fetcher, "u")
+	traces, err := fetchGPGKeys(context.Background(), fetcher, "u", "")
 	require.NoError(t, err)
 	assert.Empty(t, traces)
 }
@@ -182,7 +188,7 @@ func TestFetchGPGKeys_PlaceholderVerifiedEmailExcluded(t *testing.T) {
 		},
 	}
 
-	traces, err := fetchGPGKeys(context.Background(), fetcher, "u")
+	traces, err := fetchGPGKeys(context.Background(), fetcher, "u", "")
 	require.NoError(t, err)
 	for _, tr := range traces {
 		assert.NotEqual(t, entities.Email, tr.Type)
@@ -196,7 +202,7 @@ func TestFetchGPGKeys_NonOKStatusReturnsError(t *testing.T) {
 		},
 	}
 
-	_, err := fetchGPGKeys(context.Background(), fetcher, "u")
+	_, err := fetchGPGKeys(context.Background(), fetcher, "u", "")
 	assert.Error(t, err)
 }
 
@@ -207,6 +213,6 @@ func TestFetchGPGKeys_MalformedJSONReturnsError(t *testing.T) {
 		},
 	}
 
-	_, err := fetchGPGKeys(context.Background(), fetcher, "u")
+	_, err := fetchGPGKeys(context.Background(), fetcher, "u", "")
 	assert.Error(t, err)
 }

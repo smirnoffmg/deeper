@@ -13,13 +13,22 @@ import (
 )
 
 type profileFetcher interface {
-	Get(ctx context.Context, url string) (*http.Response, error)
+	Do(req *http.Request) (*http.Response, error)
 }
 
-func fetchProfile(ctx context.Context, fetcher profileFetcher, username string) ([]entities.Trace, error) {
+func fetchProfile(ctx context.Context, fetcher profileFetcher, username, token string) ([]entities.Trace, error) {
 	reqURL := "https://api.github.com/users/" + username
 
-	resp, err := fetcher.Get(ctx, reqURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := fetcher.Do(req)
 	if err != nil {
 		return nil, err
 	}

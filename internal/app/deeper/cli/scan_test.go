@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -126,4 +128,82 @@ func TestNewDatabase_UsesMigrations(t *testing.T) {
 	stats, err := db.Stats()
 	require.NoError(t, err)
 	assert.Contains(t, stats, "total_traces")
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	orig := os.Stdout
+	os.Stdout = w
+	defer func() { os.Stdout = orig }()
+
+	fn()
+
+	require.NoError(t, w.Close())
+	out, err := io.ReadAll(r)
+	require.NoError(t, err)
+	return string(out)
+}
+
+func newSessionWithGraph(t *testing.T) (*database.Repository, int64, string) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	_, repo, err := createEngine()
+	require.NoError(t, err)
+
+	session, err := repo.CreateScanSession("root.com")
+	require.NoError(t, err)
+	require.NoError(t, repo.PersistDiscoveries(session.ID, []entities.Discovery{
+		{Parent: entities.Trace{Value: "root.com", Type: entities.Domain}, PluginName: "p1", Child: entities.Trace{Value: "leaf.root.com", Type: entities.Subdomain}},
+	}))
+	return repo, session.ID, filepath.Join(home, ".deeper", "reports", fmt.Sprintf("scan-%d.html", session.ID))
+}
+
+func TestEmitResults_NonTableFormatsStillWriteReport(t *testing.T) {
+	for _, format := range []string{"json", "csv"} {
+		t.Run(format, func(t *testing.T) {
+			repo, sessionID, reportPath := newSessionWithGraph(t)
+			traces := []entities.Trace{{Value: "leaf.root.com", Type: entities.Subdomain}}
+
+			captureStdout(t, func() {
+				require.NoError(t, emitResults(repo, sessionID, traces, format, "results.out", false))
+			})
+
+			_, err := os.Stat(reportPath)
+			assert.NoError(t, err)
+		})
+	}
+}
+
+func TestEmitResults_NoTracesStillWritesReportAndFormattedOutput(t *testing.T) {
+	for format, want := range map[string]string{
+		"table": "No traces found\n",
+		"json":  "[\n]\n",
+		"csv":   "value,type\n",
+	} {
+		t.Run(format, func(t *testing.T) {
+			repo, sessionID, reportPath := newSessionWithGraph(t)
+
+			out := captureStdout(t, func() {
+				require.NoError(t, emitResults(repo, sessionID, nil, format, "", false))
+			})
+
+			assert.Equal(t, want, out)
+			_, err := os.Stat(reportPath)
+			assert.NoError(t, err)
+		})
+	}
+}
+
+func TestEmitResults_UnsupportedFormatWritesNoReport(t *testing.T) {
+	repo, sessionID, reportPath := newSessionWithGraph(t)
+
+	err := emitResults(repo, sessionID, []entities.Trace{{Value: "x", Type: entities.Domain}}, "xml", "results.out", false)
+
+	assert.Error(t, err)
+	_, statErr := os.Stat(reportPath)
+	assert.True(t, os.IsNotExist(statErr))
 }

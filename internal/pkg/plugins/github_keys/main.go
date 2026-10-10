@@ -12,10 +12,11 @@ import (
 
 type GitHubKeysPlugin struct {
 	fetcher keyFetcher
+	token   string
 }
 
 func NewPlugin(cfg *config.Config) *GitHubKeysPlugin {
-	return &GitHubKeysPlugin{fetcher: deeperhttp.NewClient(cfg)}
+	return &GitHubKeysPlugin{fetcher: deeperhttp.NewClient(cfg), token: cfg.GitHubToken}
 }
 
 func (p *GitHubKeysPlugin) Register(r plugins.Registry) error {
@@ -33,14 +34,14 @@ func (p *GitHubKeysPlugin) FollowTrace(ctx context.Context, trace entities.Trace
 
 	var traces []entities.Trace
 
-	sshTraces, err := fetchSSHKeys(ctx, p.fetcher, trace.Value)
+	sshTraces, err := fetchSSHKeys(ctx, p.fetcher, trace.Value, p.token)
 	if err != nil {
 		log.Warn().Err(err).Str("username", trace.Value).Msg("SSH keys lookup failed, skipping")
 	} else {
 		traces = append(traces, sshTraces...)
 	}
 
-	gpgTraces, err := fetchGPGKeys(ctx, p.fetcher, trace.Value)
+	gpgTraces, err := fetchGPGKeys(ctx, p.fetcher, trace.Value, p.token)
 	if err != nil {
 		log.Warn().Err(err).Str("username", trace.Value).Msg("GPG keys lookup failed, skipping")
 	} else {

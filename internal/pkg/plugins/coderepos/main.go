@@ -3,9 +3,11 @@ package coderepos
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
+	"github.com/rs/zerolog/log"
 	"github.com/smirnoffmg/deeper/internal/pkg/config"
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
 	deeperhttp "github.com/smirnoffmg/deeper/internal/pkg/http"
@@ -15,15 +17,16 @@ import (
 const InputTraceType = entities.Username
 
 type repoFetcher interface {
-	Get(ctx context.Context, url string) (*http.Response, error)
+	Do(req *http.Request) (*http.Response, error)
 }
 
 type CodeRepositoriesPlugin struct {
-	fetcher repoFetcher
+	fetcher     repoFetcher
+	githubToken string
 }
 
 func NewPlugin(cfg *config.Config) *CodeRepositoriesPlugin {
-	return &CodeRepositoriesPlugin{fetcher: deeperhttp.NewClient(cfg)}
+	return &CodeRepositoriesPlugin{fetcher: deeperhttp.NewClient(cfg), githubToken: cfg.GitHubToken}
 }
 
 func (g *CodeRepositoriesPlugin) Register(r plugins.Registry) error {
@@ -53,35 +56,68 @@ func (g *CodeRepositoriesPlugin) FollowTrace(ctx context.Context, trace entities
 	}
 
 	var newTraces []entities.Trace
+	var errs []error
 
-	githubRepos, err := fetchGitHubRepos(ctx, g.fetcher, trace.Value)
+	githubRepos, err := fetchGitHubRepos(ctx, g.fetcher, trace.Value, g.githubToken)
 	if err == nil {
 		newTraces = append(newTraces, githubRepos...)
+	} else {
+		errs = append(errs, err)
 	}
 
 	bitbucketRepos, err := fetchBitbucketRepos(ctx, g.fetcher, trace.Value)
 	if err == nil {
 		newTraces = append(newTraces, bitbucketRepos...)
+	} else {
+		errs = append(errs, err)
 	}
 
 	gitlabRepos, err := fetchGitLabRepos(ctx, g.fetcher, trace.Value)
 	if err == nil {
 		newTraces = append(newTraces, gitlabRepos...)
+	} else {
+		errs = append(errs, err)
 	}
 
-	return newTraces, nil
+	// The processor drops every trace when a plugin errors, so one host
+	// rate-limiting must not discard repos the other hosts did return.
+	if len(newTraces) > 0 {
+		for _, err := range errs {
+			log.Warn().Err(err).Str("username", trace.Value).Msg("code repository source failed, skipping")
+		}
+		return newTraces, nil
+	}
+	return nil, errors.Join(errs...)
 }
 
-func fetchGitHubRepos(ctx context.Context, fetcher repoFetcher, username string) ([]entities.Trace, error) {
-	url := fmt.Sprintf("https://api.github.com/users/%s/repos", username)
-	resp, err := fetcher.Get(ctx, url)
+func getRepoList(ctx context.Context, fetcher repoFetcher, host, url, token string, into any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, err
+		return err
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := fetcher.Do(req)
+	if err != nil {
+		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	if resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("%s repositories request failed: status %d", host, resp.StatusCode)
+	}
+	return json.NewDecoder(resp.Body).Decode(into)
+}
+
+func fetchGitHubRepos(ctx context.Context, fetcher repoFetcher, username, token string) ([]entities.Trace, error) {
+	url := fmt.Sprintf("https://api.github.com/users/%s/repos?per_page=100", username)
 	var repos []GitHubRepo
-	if err := json.NewDecoder(resp.Body).Decode(&repos); err != nil {
+	if err := getRepoList(ctx, fetcher, "github", url, token, &repos); err != nil {
 		return nil, err
 	}
 
@@ -96,17 +132,11 @@ func fetchGitHubRepos(ctx context.Context, fetcher repoFetcher, username string)
 }
 
 func fetchBitbucketRepos(ctx context.Context, fetcher repoFetcher, username string) ([]entities.Trace, error) {
-	url := fmt.Sprintf("https://api.bitbucket.org/2.0/repositories/%s", username)
-	resp, err := fetcher.Get(ctx, url)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
+	url := fmt.Sprintf("https://api.bitbucket.org/2.0/repositories/%s?pagelen=100", username)
 	var result struct {
 		Repos []BitbucketRepo `json:"values"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := getRepoList(ctx, fetcher, "bitbucket", url, "", &result); err != nil {
 		return nil, err
 	}
 
@@ -121,15 +151,9 @@ func fetchBitbucketRepos(ctx context.Context, fetcher repoFetcher, username stri
 }
 
 func fetchGitLabRepos(ctx context.Context, fetcher repoFetcher, username string) ([]entities.Trace, error) {
-	url := fmt.Sprintf("https://gitlab.com/api/v4/users/%s/projects", username)
-	resp, err := fetcher.Get(ctx, url)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
+	url := fmt.Sprintf("https://gitlab.com/api/v4/users/%s/projects?per_page=100", username)
 	var repos []GitLabRepo
-	if err := json.NewDecoder(resp.Body).Decode(&repos); err != nil {
+	if err := getRepoList(ctx, fetcher, "gitlab", url, "", &repos); err != nil {
 		return nil, err
 	}
 

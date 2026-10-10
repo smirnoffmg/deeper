@@ -22,9 +22,9 @@ var (
 	urlPattern   = regexp.MustCompile(`https?://\S+`)
 )
 
-// extractHandle returns the bluesky handle (without the .bsky.social
-// suffix, which we re-add when calling the API) from a bsky.app profile
-// URL, or "" if it doesn't match.
+// extractHandle returns the bluesky handle from a bsky.app profile URL as
+// written there (lig.bsky.social, alice.example.com), or "" if it doesn't
+// match.
 func extractHandle(rawURL string) string {
 	parsed, err := url.Parse(rawURL)
 	if err != nil || parsed.Hostname() != "bsky.app" {
@@ -34,7 +34,7 @@ func extractHandle(rawURL string) string {
 	if len(parts) != 2 || parts[0] != "profile" || parts[1] == "" {
 		return ""
 	}
-	return strings.TrimSuffix(parts[1], ".bsky.social")
+	return parts[1]
 }
 
 type blueskyProfile struct {
@@ -47,7 +47,10 @@ type blueskyError struct {
 }
 
 func fetchProfile(ctx context.Context, fetcher profileFetcher, handle string) ([]entities.Trace, error) {
-	reqURL := "https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=" + handle + ".bsky.social"
+	if !strings.HasPrefix(handle, "did:") && !strings.Contains(handle, ".") {
+		handle += ".bsky.social"
+	}
+	reqURL := "https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=" + handle
 
 	resp, err := fetcher.Get(ctx, reqURL)
 	if err != nil {

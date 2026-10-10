@@ -64,6 +64,30 @@ func TestFollowTrace_GPGFailureDoesNotBlockSSH(t *testing.T) {
 	assert.Equal(t, entities.SSHKey, traces[0].Type)
 }
 
+func TestFollowTrace_SetsAuthorizationWhenTokenPresent(t *testing.T) {
+	fetcher := &fakeKeyFetcher{}
+	p := &GitHubKeysPlugin{fetcher: fetcher, token: "ghp_secret"}
+
+	_, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Username, Value: "alsmirn"})
+	require.NoError(t, err)
+	require.NotEmpty(t, fetcher.reqs)
+	for _, req := range fetcher.reqs {
+		assert.Equal(t, "Bearer ghp_secret", req.Header.Get("Authorization"), req.URL.String())
+	}
+}
+
+func TestFollowTrace_NoAuthorizationWhenTokenAbsent(t *testing.T) {
+	fetcher := &fakeKeyFetcher{}
+	p := &GitHubKeysPlugin{fetcher: fetcher}
+
+	_, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Username, Value: "alsmirn"})
+	require.NoError(t, err)
+	require.NotEmpty(t, fetcher.reqs)
+	for _, req := range fetcher.reqs {
+		assert.Empty(t, req.Header.Get("Authorization"), req.URL.String())
+	}
+}
+
 func TestRegister_RegistersUnderUsername(t *testing.T) {
 	p := NewPlugin(config.DefaultConfig())
 	registry := plugins.Registry{}

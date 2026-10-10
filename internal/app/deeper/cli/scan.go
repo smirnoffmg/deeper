@@ -47,7 +47,6 @@ Examples:
 		if err != nil {
 			return err
 		}
-		display := createDisplay()
 
 		session, err := repo.CreateScanSession(input)
 		if err != nil {
@@ -87,46 +86,51 @@ Examples:
 			traces = limitDepth(traces, scanDepth)
 		}
 
-		// Display results
-		if len(traces) == 0 {
-			fmt.Println("No traces found")
-			return nil
-		}
-
 		log.Info().Msgf("Found %d traces", len(traces))
 
-		// Output results based on format
-		switch output {
-		case "table":
-			display.PrintTracesAsTable(traces)
-		case "json":
-			return outputTracesJSON(traces)
-		case "csv":
-			return outputTracesCSV(traces)
-		default:
-			return fmt.Errorf("unsupported output format: %s", output)
-		}
+		// A browser window would hijack a json/csv pipeline such as `| jq`.
+		return emitResults(repo, session.ID, traces, output, scanSave, !scanNoOpen && output == "table")
+	},
+}
 
-		// Save results if requested
-		if scanSave != "" {
-			if err := saveResults(traces, scanSave); err != nil {
-				log.Error().Err(err).Msgf("Failed to save results to %s", scanSave)
-				return err
-			}
-			log.Info().Msgf("Results saved to %s", scanSave)
+func emitResults(repo *database.Repository, sessionID int64, traces []entities.Trace, format, savePath string, openInBrowser bool) error {
+	switch format {
+	case "table":
+		if len(traces) == 0 {
+			fmt.Println("No traces found")
+		} else {
+			createDisplay().PrintTracesAsTable(traces)
 		}
-
-		graphPath, err := saveGraphReport(repo, session.ID, !scanNoOpen)
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to generate graph report")
+	case "json":
+		if err := outputTracesJSON(traces); err != nil {
 			return err
 		}
-		if graphPath != "" {
-			log.Info().Msgf("Graph report: %s", graphPath)
+	case "csv":
+		if err := outputTracesCSV(traces); err != nil {
+			return err
 		}
+	default:
+		return fmt.Errorf("unsupported output format: %s", format)
+	}
 
-		return nil
-	},
+	if savePath != "" {
+		if err := saveResults(traces, savePath); err != nil {
+			log.Error().Err(err).Msgf("Failed to save results to %s", savePath)
+			return err
+		}
+		log.Info().Msgf("Results saved to %s", savePath)
+	}
+
+	graphPath, err := saveGraphReport(repo, sessionID, openInBrowser)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to generate graph report")
+		return err
+	}
+	if graphPath != "" {
+		log.Info().Msgf("Graph report: %s", graphPath)
+	}
+
+	return nil
 }
 
 func init() {

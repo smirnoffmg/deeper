@@ -20,6 +20,12 @@ type fakeResponse struct {
 type fakeProfileFetcher struct {
 	responses map[string]fakeResponse
 	lastURL   string
+	reqs      []*http.Request
+}
+
+func (f *fakeProfileFetcher) Do(req *http.Request) (*http.Response, error) {
+	f.reqs = append(f.reqs, req)
+	return f.Get(req.Context(), req.URL.String())
 }
 
 func (f *fakeProfileFetcher) Get(_ context.Context, url string) (*http.Response, error) {
@@ -49,7 +55,7 @@ func TestFetchProfile_AllFieldsPresent(t *testing.T) {
 		},
 	}
 
-	traces, err := fetchProfile(context.Background(), fetcher, "alsmirn")
+	traces, err := fetchProfile(context.Background(), fetcher, "alsmirn", "")
 	require.NoError(t, err)
 
 	got := map[entities.TraceType]string{}
@@ -71,7 +77,7 @@ func TestFetchProfile_AllFieldsAbsent(t *testing.T) {
 		},
 	}
 
-	traces, err := fetchProfile(context.Background(), fetcher, "nobody")
+	traces, err := fetchProfile(context.Background(), fetcher, "nobody", "")
 	require.NoError(t, err)
 	assert.Empty(t, traces)
 }
@@ -83,7 +89,7 @@ func TestFetchProfile_PlaceholderEmailSkipped(t *testing.T) {
 		},
 	}
 
-	traces, err := fetchProfile(context.Background(), fetcher, "u")
+	traces, err := fetchProfile(context.Background(), fetcher, "u", "")
 	require.NoError(t, err)
 	for _, tr := range traces {
 		assert.NotEqual(t, entities.Email, tr.Type)
@@ -97,7 +103,7 @@ func TestFetchProfile_InvalidBlogURLSkipped(t *testing.T) {
 		},
 	}
 
-	traces, err := fetchProfile(context.Background(), fetcher, "u")
+	traces, err := fetchProfile(context.Background(), fetcher, "u", "")
 	require.NoError(t, err)
 	for _, tr := range traces {
 		assert.NotEqual(t, entities.Url, tr.Type)
@@ -111,7 +117,7 @@ func TestFetchProfile_BlankBlogFieldSkipped(t *testing.T) {
 		},
 	}
 
-	traces, err := fetchProfile(context.Background(), fetcher, "u")
+	traces, err := fetchProfile(context.Background(), fetcher, "u", "")
 	require.NoError(t, err)
 	assert.Empty(t, traces)
 }
@@ -123,7 +129,7 @@ func TestFetchProfile_NonOKStatusReturnsError(t *testing.T) {
 		},
 	}
 
-	_, err := fetchProfile(context.Background(), fetcher, "u")
+	_, err := fetchProfile(context.Background(), fetcher, "u", "")
 	assert.Error(t, err)
 }
 
@@ -134,6 +140,6 @@ func TestFetchProfile_MalformedJSONReturnsError(t *testing.T) {
 		},
 	}
 
-	_, err := fetchProfile(context.Background(), fetcher, "u")
+	_, err := fetchProfile(context.Background(), fetcher, "u", "")
 	assert.Error(t, err)
 }

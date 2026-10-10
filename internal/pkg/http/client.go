@@ -67,6 +67,10 @@ func (c *DefaultClient) Post(ctx context.Context, url, contentType string, body 
 
 // Do performs an HTTP request with retry logic and rate limiting
 func (c *DefaultClient) Do(req *http.Request) (*http.Response, error) {
+	if req.Header.Get("User-Agent") == "" {
+		req.Header.Set("User-Agent", c.config.UserAgent)
+	}
+
 	// Rate limiting
 	<-c.rateLimiter.C
 

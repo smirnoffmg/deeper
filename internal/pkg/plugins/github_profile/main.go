@@ -11,10 +11,11 @@ import (
 
 type GitHubProfilePlugin struct {
 	fetcher profileFetcher
+	token   string
 }
 
 func NewPlugin(cfg *config.Config) *GitHubProfilePlugin {
-	return &GitHubProfilePlugin{fetcher: deeperhttp.NewClient(cfg)}
+	return &GitHubProfilePlugin{fetcher: deeperhttp.NewClient(cfg), token: cfg.GitHubToken}
 }
 
 func (p *GitHubProfilePlugin) Register(r plugins.Registry) error {
@@ -26,7 +27,7 @@ func (p *GitHubProfilePlugin) FollowTrace(ctx context.Context, trace entities.Tr
 	if trace.Type != entities.Username {
 		return nil, nil
 	}
-	return fetchProfile(ctx, p.fetcher, trace.Value)
+	return fetchProfile(ctx, p.fetcher, trace.Value, p.token)
 }
 
 func (p GitHubProfilePlugin) String() string {

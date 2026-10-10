@@ -12,13 +12,22 @@ import (
 )
 
 type keyFetcher interface {
-	Get(ctx context.Context, url string) (*http.Response, error)
+	Do(req *http.Request) (*http.Response, error)
 }
 
-func fetchSSHKeys(ctx context.Context, fetcher keyFetcher, username string) ([]entities.Trace, error) {
+func fetchSSHKeys(ctx context.Context, fetcher keyFetcher, username, token string) ([]entities.Trace, error) {
 	reqURL := fmt.Sprintf("https://api.github.com/users/%s/keys", username)
 
-	resp, err := fetcher.Get(ctx, reqURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := fetcher.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -51,10 +60,19 @@ func fetchSSHKeys(ctx context.Context, fetcher keyFetcher, username string) ([]e
 	return traces, nil
 }
 
-func fetchGPGKeys(ctx context.Context, fetcher keyFetcher, username string) ([]entities.Trace, error) {
+func fetchGPGKeys(ctx context.Context, fetcher keyFetcher, username, token string) ([]entities.Trace, error) {
 	reqURL := fmt.Sprintf("https://api.github.com/users/%s/gpg_keys", username)
 
-	resp, err := fetcher.Get(ctx, reqURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := fetcher.Do(req)
 	if err != nil {
 		return nil, err
 	}

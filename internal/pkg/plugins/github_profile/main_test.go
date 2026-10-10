@@ -33,6 +33,30 @@ func TestFollowTrace_ValidUsername(t *testing.T) {
 	require.Len(t, traces, 2)
 }
 
+func TestFollowTrace_SetsAuthorizationWhenTokenPresent(t *testing.T) {
+	fetcher := &fakeProfileFetcher{}
+	p := &GitHubProfilePlugin{fetcher: fetcher, token: "ghp_secret"}
+
+	_, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Username, Value: "alsmirn"})
+	require.NoError(t, err)
+	require.NotEmpty(t, fetcher.reqs)
+	for _, req := range fetcher.reqs {
+		assert.Equal(t, "Bearer ghp_secret", req.Header.Get("Authorization"), req.URL.String())
+	}
+}
+
+func TestFollowTrace_NoAuthorizationWhenTokenAbsent(t *testing.T) {
+	fetcher := &fakeProfileFetcher{}
+	p := &GitHubProfilePlugin{fetcher: fetcher}
+
+	_, err := p.FollowTrace(context.Background(), entities.Trace{Type: entities.Username, Value: "alsmirn"})
+	require.NoError(t, err)
+	require.NotEmpty(t, fetcher.reqs)
+	for _, req := range fetcher.reqs {
+		assert.Empty(t, req.Header.Get("Authorization"), req.URL.String())
+	}
+}
+
 func TestRegister_RegistersUnderUsername(t *testing.T) {
 	p := NewPlugin(config.DefaultConfig())
 	registry := plugins.Registry{}

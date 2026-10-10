@@ -74,6 +74,7 @@ func TestRepository_StoreAndGetTrace(t *testing.T) {
 
 	if retrieved == nil {
 		t.Fatal("Retrieved trace is nil")
+		return
 	}
 
 	if retrieved.Value != trace.Value {
@@ -191,6 +192,7 @@ func TestRepository_ScanSession(t *testing.T) {
 
 	if retrieved == nil {
 		t.Fatal("Retrieved session is nil")
+		return
 	}
 
 	if retrieved.Status != "completed" {
