@@ -206,3 +206,26 @@ func TestProbeUrl_PrefersUrlProbe(t *testing.T) {
 	assert.Equal(t, "https://api.site.example/users/alice", withProbe.probeUrl("alice"))
 	assert.Equal(t, "https://site.example/alice", withoutProbe.probeUrl("alice"))
 }
+
+func TestFollowEvidence_FindingsAreWeakWithErrorTypeBasis(t *testing.T) {
+	entries := map[string]SherlockEntry{
+		"ByStatus":  {Url: "https://status.example/{}", ErrorType: "status_code"},
+		"ByMessage": {Url: "https://message.example/{}", ErrorType: "message"},
+	}
+	checkFn := func(_ context.Context, entry SherlockEntry, username string) bool { return true }
+	p := &SocialProfilesPlugin{entries: entries, checkFn: checkFn}
+
+	findings, err := p.FollowEvidence(context.Background(), entities.Trace{Type: InputTraceType, Value: "alice"})
+
+	require.NoError(t, err)
+	got := map[string]string{}
+	for _, f := range findings {
+		assert.Equal(t, entities.StrengthWeak, f.Strength)
+		assert.Equal(t, entities.SocialGeneric, f.Trace.Type)
+		got[f.Trace.Value] = f.Basis
+	}
+	assert.Equal(t, map[string]string{
+		"https://status.example/alice":  "sherlock status_code check",
+		"https://message.example/alice": "sherlock message check",
+	}, got)
+}

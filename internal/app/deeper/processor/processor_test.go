@@ -288,3 +288,77 @@ func TestProcessor_ProcessTrace_TaskTimeoutCancelsPlugin(t *testing.T) {
 	}
 	assert.Empty(t, results, "results produced after the deadline must not count as discoveries")
 }
+
+const evidenceTraceType entities.TraceType = "test_evidence"
+
+// evidencePlugin implements plugins.EvidenceFollower so ProcessTrace can be
+// tested against plugins that label each finding with a strength.
+type evidencePlugin struct {
+	name     string
+	strength entities.Strength
+	basis    string
+}
+
+func (p *evidencePlugin) FollowEvidence(_ context.Context, trace entities.Trace) ([]plugins.Finding, error) {
+	return []plugins.Finding{{
+		Trace:    entities.Trace{Value: p.name, Type: trace.Type},
+		Strength: p.strength,
+		Basis:    p.basis,
+	}}, nil
+}
+
+func (p *evidencePlugin) FollowTrace(ctx context.Context, trace entities.Trace) ([]entities.Trace, error) {
+	return nil, fmt.Errorf("FollowTrace must not be called on an EvidenceFollower")
+}
+
+func (p *evidencePlugin) String() string {
+	return p.name
+}
+
+func processSingle(t *testing.T, plugin plugins.DeeperPlugin) entities.Discovery {
+	t.Helper()
+	registry := plugins.Registry{evidenceTraceType: {plugin}}
+
+	cfg := config.DefaultConfig()
+	cfg.WorkerPoolConfig.EnableDeduplication = false
+
+	db, err := database.NewDatabase(filepath.Join(t.TempDir(), "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	repo := database.NewRepository(db)
+	proc := NewProcessor(cfg, registry, metrics.GetGlobalMetrics(), repo, database.NewCache(repo))
+	t.Cleanup(func() { _ = proc.Shutdown(5 * time.Second) })
+
+	results, err := proc.ProcessTrace(context.Background(), entities.Trace{Value: "target", Type: evidenceTraceType})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	return results[0]
+}
+
+func TestProcessor_ProcessTrace_EvidenceFollowerCarriesStrengthAndBasis(t *testing.T) {
+	d := processSingle(t, &evidencePlugin{name: "ev", strength: entities.StrengthWeak, basis: "sherlock status_code check"})
+
+	assert.Equal(t, "ev", d.Child.Value)
+	assert.Equal(t, entities.StrengthWeak, d.Strength)
+	assert.Equal(t, "sherlock status_code check", d.Basis)
+}
+
+func TestProcessor_ProcessTrace_PlainPluginDefaultsToStrong(t *testing.T) {
+	d := processSingle(t, &plainMatcherTestPlugin{name: "plain"})
+
+	assert.Equal(t, entities.StrengthStrong, d.Strength)
+	assert.Equal(t, "", d.Basis)
+}
+
+func TestProcessor_ProcessTrace_EmptyStrengthNormalisedToStrong(t *testing.T) {
+	d := processSingle(t, &evidencePlugin{name: "empty", strength: ""})
+
+	assert.Equal(t, entities.StrengthStrong, d.Strength)
+}
+
+func TestProcessor_ProcessTrace_UnknownStrengthNormalisedToStrong(t *testing.T) {
+	d := processSingle(t, &evidencePlugin{name: "bogus", strength: "bogus", basis: "b"})
+
+	assert.Equal(t, entities.StrengthStrong, d.Strength)
+	assert.Equal(t, "b", d.Basis)
+}

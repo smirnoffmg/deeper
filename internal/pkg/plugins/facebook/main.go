@@ -24,6 +24,18 @@ func (g *FacebookPlugin) Register(r plugins.Registry) error {
 }
 
 func (g *FacebookPlugin) FollowTrace(ctx context.Context, trace entities.Trace) ([]entities.Trace, error) {
+	findings, err := g.FollowEvidence(ctx, trace)
+	if err != nil {
+		return nil, err
+	}
+	var traces []entities.Trace
+	for _, f := range findings {
+		traces = append(traces, f.Trace)
+	}
+	return traces, nil
+}
+
+func (g *FacebookPlugin) FollowEvidence(ctx context.Context, trace entities.Trace) ([]plugins.Finding, error) {
 	if trace.Type != entities.Username && trace.Type != entities.Name {
 		return nil, nil
 	}
@@ -33,11 +45,15 @@ func (g *FacebookPlugin) FollowTrace(ctx context.Context, trace entities.Trace) 
 		return nil, err
 	}
 
-	var newTraces []entities.Trace
+	var findings []plugins.Finding
 	for _, profile := range profiles {
-		newTraces = append(newTraces, entities.Trace{Value: profile, Type: entities.Url})
+		findings = append(findings, plugins.Finding{
+			Trace:    entities.Trace{Value: profile, Type: entities.Url},
+			Strength: entities.StrengthWeak,
+			Basis:    "search hit: " + trace.Value + " site:facebook.com",
+		})
 	}
-	return newTraces, nil
+	return findings, nil
 }
 
 func (g FacebookPlugin) String() string {

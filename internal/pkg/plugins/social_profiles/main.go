@@ -157,14 +157,26 @@ func (g *SocialProfilesPlugin) Register(r plugins.Registry) error {
 }
 
 func (g *SocialProfilesPlugin) FollowTrace(ctx context.Context, trace entities.Trace) ([]entities.Trace, error) {
+	findings, err := g.FollowEvidence(ctx, trace)
+	if err != nil {
+		return nil, err
+	}
+	var traces []entities.Trace
+	for _, f := range findings {
+		traces = append(traces, f.Trace)
+	}
+	return traces, nil
+}
+
+func (g *SocialProfilesPlugin) FollowEvidence(ctx context.Context, trace entities.Trace) ([]plugins.Finding, error) {
 	if trace.Type != InputTraceType {
 		return nil, nil
 	}
 
 	var (
-		mu        sync.Mutex
-		newTraces []entities.Trace
-		eg        errgroup.Group
+		mu       sync.Mutex
+		findings []plugins.Finding
+		eg       errgroup.Group
 	)
 	eg.SetLimit(maxConcurrentChecks)
 
@@ -180,9 +192,13 @@ func (g *SocialProfilesPlugin) FollowTrace(ctx context.Context, trace entities.T
 		eg.Go(func() error {
 			if g.checkFn(ctx, entry, trace.Value) {
 				mu.Lock()
-				newTraces = append(newTraces, entities.Trace{
-					Value: entry.BuildUrl(trace.Value),
-					Type:  entities.SocialGeneric,
+				findings = append(findings, plugins.Finding{
+					Trace: entities.Trace{
+						Value: entry.BuildUrl(trace.Value),
+						Type:  entities.SocialGeneric,
+					},
+					Strength: entities.StrengthWeak,
+					Basis:    "sherlock " + entry.ErrorType + " check",
 				})
 				mu.Unlock()
 			}
@@ -193,7 +209,7 @@ func (g *SocialProfilesPlugin) FollowTrace(ctx context.Context, trace entities.T
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
-	return newTraces, nil
+	return findings, nil
 }
 
 func (g SocialProfilesPlugin) String() string {

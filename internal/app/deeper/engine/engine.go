@@ -55,19 +55,22 @@ func (e *Engine) ProcessInput(ctx context.Context, input string, scanID int64) (
 		PluginName:   database.SeedPluginName,
 		ScanID:       scanID,
 		DiscoveredAt: time.Now(),
+		Strength:     entities.StrengthProof,
+		Basis:        "seed",
 	}); err != nil {
 		return nil, fmt.Errorf("failed to persist seed edge: %w", err)
 	}
 
 	queue := []entities.Trace{initialTrace}
-	// The seed is marked seen and included in results up front: previously
+	// The seed is registered as queued and included in results up front: previously
 	// it was excluded from allTraces entirely (only plugin-discovered
 	// children were ever appended), so a scan's own starting point never
 	// appeared in its own results unless some plugin happened to
 	// rediscover the identical (value, type) pair as a "new" child
-	// elsewhere in the graph. Marking it seen here also prevents that kind
+	// elsewhere in the graph. Registering it here also prevents that kind
 	// of rediscovery from re-queuing and reprocessing the seed a second time.
-	seen := map[entities.Trace]bool{initialTrace: true}
+	nodes := map[entities.Trace]*nodeState{initialTrace: {strength: entities.StrengthProof, queued: true}}
+	children := map[entities.Trace][]entities.Discovery{}
 	allTraces := []entities.Trace{initialTrace}
 
 	var processedCount int
@@ -84,11 +87,10 @@ func (e *Engine) ProcessInput(ctx context.Context, input string, scanID int64) (
 		}
 
 		for _, d := range discoveries {
-			if !seen[d.Child] {
-				seen[d.Child] = true
+			if _, known := nodes[d.Child]; !known {
 				allTraces = append(allTraces, d.Child)
-				queue = append(queue, d.Child)
 			}
+			queue = append(queue, admit(nodes, children, d)...)
 		}
 
 		processedCount += len(batch)
@@ -157,4 +159,58 @@ func (e *Engine) GetWorkerPoolMetrics() interface{} {
 		return e.processor.GetWorkerPoolMetrics()
 	}
 	return nil
+}
+
+type nodeState struct {
+	strength entities.Strength
+	queued   bool
+}
+
+func rank(s entities.Strength) int {
+	switch s {
+	case entities.StrengthProof:
+		return 2
+	case entities.StrengthStrong:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// admit applies d to nodes and returns the traces that newly become enqueueable.
+func admit(nodes map[entities.Trace]*nodeState, children map[entities.Trace][]entities.Discovery, d entities.Discovery) []entities.Trace {
+	children[d.Parent] = append(children[d.Parent], d)
+	return propagate(nodes, children, d)
+}
+
+func propagate(nodes map[entities.Trace]*nodeState, children map[entities.Trace][]entities.Discovery, d entities.Discovery) []entities.Trace {
+	parent := nodes[d.Parent]
+	s := d.Strength
+	if rank(parent.strength) < rank(s) {
+		s = parent.strength
+	}
+
+	var enqueued []entities.Trace
+	promoted := false
+	child, known := nodes[d.Child]
+	switch {
+	case !known:
+		child = &nodeState{strength: s}
+		nodes[d.Child] = child
+	case rank(s) > rank(child.strength):
+		child.strength = s
+		promoted = true
+	}
+
+	if !child.queued && parent.strength != entities.StrengthWeak {
+		child.queued = true
+		enqueued = append(enqueued, d.Child)
+	}
+
+	if promoted {
+		for _, cd := range children[d.Child] {
+			enqueued = append(enqueued, propagate(nodes, children, cd)...)
+		}
+	}
+	return enqueued
 }

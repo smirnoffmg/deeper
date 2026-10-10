@@ -162,12 +162,15 @@
     var edgesDataset = new vis.DataSet(rawEdges.map(function (e, idx) {
       var tooltip = document.createElement("div");
       tooltip.className = "tt-value";
-      tooltip.textContent = "via " + e.label;
+      var tip = "via " + e.label + " · " + e.strength;
+      if (e.basis) tip += ": " + e.basis;
+      tooltip.textContent = tip;
       return {
         id: idx,
         from: e.from,
         to: e.to,
         title: tooltip,
+        dashes: e.strength === "weak",
         color: { color: EDGE_COLOR, opacity: EDGE_OPACITY },
         width: 1,
         arrows: { to: { enabled: true, scaleFactor: 0.35 } },

@@ -3,6 +3,7 @@ package processor
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -149,12 +150,14 @@ func (p *Processor) ProcessTrace(ctx context.Context, trace entities.Trace) ([]e
 		if !ok {
 			continue
 		}
-		for _, newTrace := range pluginResult.Traces {
-			if newTrace.Value != "" {
+		for _, finding := range pluginResult.Traces {
+			if finding.Trace.Value != "" {
 				discoveries = append(discoveries, entities.Discovery{
 					Parent:     trace,
 					PluginName: pluginResult.PluginName,
-					Child:      newTrace,
+					Child:      finding.Trace,
+					Strength:   finding.Strength,
+					Basis:      finding.Basis,
 				})
 			}
 		}
@@ -228,10 +231,31 @@ func (p *Processor) ConfigureDomainRateLimit(domain string, rateLimit float64, b
 
 type pluginTraceResult struct {
 	PluginName string
-	Traces     []entities.Trace
+	Traces     []plugins.Finding
+}
+
+func knownStrength(s entities.Strength) bool {
+	switch s {
+	case entities.StrengthWeak, entities.StrengthStrong, entities.StrengthProof:
+		return true
+	}
+	return false
+}
+
+func followEvidence(ctx context.Context, plugin plugins.DeeperPlugin, trace entities.Trace) ([]plugins.Finding, error) {
+	if follower, ok := plugin.(plugins.EvidenceFollower); ok {
+		return follower.FollowEvidence(ctx, trace)
+	}
+	traces, err := plugin.FollowTrace(ctx, trace)
+	findings := make([]plugins.Finding, 0, len(traces))
+	for _, t := range traces {
+		findings = append(findings, plugins.Finding{Trace: t, Strength: entities.StrengthStrong})
+	}
+	return findings, err
 }
 
 func newTraceTaskHandler(metricsCollector *metrics.MetricsCollector) workerpool.TaskHandler {
+	var warnedUnknownStrength sync.Map
 	return func(ctx context.Context, task *workerpool.Task) (interface{}, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -245,7 +269,7 @@ func newTraceTaskHandler(metricsCollector *metrics.MetricsCollector) workerpool.
 		pluginInterface := taskPayload.Plugin
 
 		pluginStartTime := time.Now()
-		newTraces, err := pluginInterface.FollowTrace(ctx, taskPayload.Trace)
+		findings, err := followEvidence(ctx, pluginInterface, taskPayload.Trace)
 		// Plugins tend to log-and-skip their own I/O errors, so a deadline hit
 		// would otherwise look like success and never reach the breaker.
 		if err == nil {
@@ -258,11 +282,20 @@ func newTraceTaskHandler(metricsCollector *metrics.MetricsCollector) workerpool.
 			return nil, errors.NewPluginError("plugin processing failed", err).WithContext("plugin", pluginInterface.String())
 		}
 
-		filtered := make([]entities.Trace, 0, len(newTraces))
-		for _, newTrace := range newTraces {
-			if newTrace.Value != "" {
-				filtered = append(filtered, newTrace)
+		filtered := make([]plugins.Finding, 0, len(findings))
+		for _, finding := range findings {
+			if finding.Trace.Value == "" {
+				continue
 			}
+			if !knownStrength(finding.Strength) {
+				if finding.Strength != "" {
+					if _, warned := warnedUnknownStrength.LoadOrStore(pluginInterface.String(), true); !warned {
+						log.Warn().Msgf("Plugin %s emitted unknown evidence strength %q; treating as strong", pluginInterface.String(), finding.Strength)
+					}
+				}
+				finding.Strength = entities.StrengthStrong
+			}
+			filtered = append(filtered, finding)
 		}
 
 		return pluginTraceResult{

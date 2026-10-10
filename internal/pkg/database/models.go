@@ -20,12 +20,14 @@ type Trace struct {
 
 // TraceEdge represents a parent→plugin→child discovery link within a scan.
 type TraceEdge struct {
-	ID            int64     `json:"id" db:"id"`
-	ParentTraceID *int64    `json:"parent_trace_id" db:"parent_trace_id"`
-	ChildTraceID  int64     `json:"child_trace_id" db:"child_trace_id"`
-	PluginName    string    `json:"plugin_name" db:"plugin_name"`
-	ScanID        int64     `json:"scan_id" db:"scan_id"`
-	DiscoveredAt  time.Time `json:"discovered_at" db:"discovered_at"`
+	ID            int64             `json:"id" db:"id"`
+	ParentTraceID *int64            `json:"parent_trace_id" db:"parent_trace_id"`
+	ChildTraceID  int64             `json:"child_trace_id" db:"child_trace_id"`
+	PluginName    string            `json:"plugin_name" db:"plugin_name"`
+	ScanID        int64             `json:"scan_id" db:"scan_id"`
+	DiscoveredAt  time.Time         `json:"discovered_at" db:"discovered_at"`
+	Strength      entities.Strength `json:"strength" db:"strength"`
+	Basis         string            `json:"basis" db:"basis"`
 }
 
 // ReachableTrace is a trace reachable from a start node within a hop budget.

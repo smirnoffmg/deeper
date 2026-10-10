@@ -70,3 +70,22 @@ func TestRegister_RegistersUnderUsernameAndName(t *testing.T) {
 func TestString(t *testing.T) {
 	assert.Equal(t, "FacebookPlugin", (&FacebookPlugin{}).String())
 }
+
+func TestFollowEvidence_FindingsAreWeakSearchHits(t *testing.T) {
+	body := `<a href="https://www.facebook.com/john.doe">John Doe</a>`
+	fetcher := &fakeSearchFetcher{
+		responses: map[string]fakeResponse{
+			expectedGoogleURL(t, "john doe"): {status: http.StatusOK, body: body},
+		},
+	}
+	p := &FacebookPlugin{fetcher: fetcher}
+
+	findings, err := p.FollowEvidence(context.Background(), entities.Trace{Value: "john doe", Type: entities.Username})
+
+	require.NoError(t, err)
+	assert.Equal(t, []plugins.Finding{{
+		Trace:    entities.Trace{Value: "https://www.facebook.com/john.doe", Type: entities.Url},
+		Strength: entities.StrengthWeak,
+		Basis:    "search hit: john doe site:facebook.com",
+	}}, findings)
+}

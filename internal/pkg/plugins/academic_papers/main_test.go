@@ -70,3 +70,22 @@ func TestRegister_RegistersUnderUsernameAndName(t *testing.T) {
 func TestString(t *testing.T) {
 	assert.Equal(t, "AcademicPapersPlugin", (&AcademicPapersPlugin{}).String())
 }
+
+func TestFollowEvidence_FindingsAreWeakNameMatches(t *testing.T) {
+	body := `{"data":[{"title":"A Paper","url":"https://example.com/paper","authors":[{"name":"Jane Doe"}]}]}`
+	fetcher := &fakeSearchFetcher{
+		responses: map[string]fakeResponse{
+			expectedSemanticScholarURL(t, "Jane Doe"): {status: http.StatusOK, body: body},
+		},
+	}
+	p := &AcademicPapersPlugin{fetcher: fetcher}
+
+	findings, err := p.FollowEvidence(context.Background(), entities.Trace{Value: "Jane Doe", Type: entities.Username})
+
+	require.NoError(t, err)
+	assert.Equal(t, []plugins.Finding{{
+		Trace:    entities.Trace{Value: "https://example.com/paper", Type: entities.Url},
+		Strength: entities.StrengthWeak,
+		Basis:    "author name within edit distance",
+	}}, findings)
+}

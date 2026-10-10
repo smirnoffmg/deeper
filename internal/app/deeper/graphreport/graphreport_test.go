@@ -38,7 +38,7 @@ func TestRender_EmbedsGraphDataAsRoundTrippableJSON(t *testing.T) {
 		{ID: 2, Label: "leaf.root.com", Type: "subdomain"},
 	}
 	edges := []Edge{
-		{From: 1, To: 2, Label: "subdomain_finder"},
+		{From: 1, To: 2, Label: "subdomain_finder", Strength: "weak", Basis: "sherlock status_code check"},
 	}
 
 	html, err := Render(nodes, edges)
@@ -57,9 +57,10 @@ func TestRender_EmbedsGraphDataAsRoundTrippableJSON(t *testing.T) {
 // <script> block and execute as markup.
 func TestRender_EscapesMaliciousValues(t *testing.T) {
 	malicious := `</script><script>alert(1)</script>`
-	nodes := []Node{{ID: 1, Label: malicious, Type: "username"}}
+	nodes := []Node{{ID: 1, Label: malicious, Type: "username"}, {ID: 2, Label: "leaf", Type: "url"}}
+	edges := []Edge{{From: 1, To: 2, Label: "facebook", Strength: "weak", Basis: malicious}}
 
-	html, err := Render(nodes, nil)
+	html, err := Render(nodes, edges)
 	require.NoError(t, err)
 
 	assert.NotContains(t, html, "<script>alert(1)</script>")
@@ -67,8 +68,10 @@ func TestRender_EscapesMaliciousValues(t *testing.T) {
 	payload := extractGraphDataJSON(t, html)
 	var got graphData
 	require.NoError(t, json.Unmarshal([]byte(payload), &got))
-	require.Len(t, got.Nodes, 1)
+	require.Len(t, got.Nodes, 2)
 	assert.Equal(t, malicious, got.Nodes[0].Label)
+	require.Len(t, got.Edges, 1)
+	assert.Equal(t, malicious, got.Edges[0].Basis)
 }
 
 func extractGraphDataJSON(t *testing.T, html string) string {
@@ -80,4 +83,14 @@ func extractGraphDataJSON(t *testing.T, html string) string {
 	end := strings.Index(html[start:], "</script>")
 	require.NotEqual(t, -1, end, "closing script tag not found")
 	return html[start : start+end]
+}
+
+// Non-adopting plugins and edges migrated by 00003 carry an empty basis; their
+// tooltip must not end in a dangling ": ".
+func TestRender_EdgeTooltipAppendsBasisOnlyWhenPresent(t *testing.T) {
+	html, err := Render(nil, nil)
+	require.NoError(t, err)
+
+	assert.NotContains(t, html, `e.strength + ": " + e.basis`)
+	assert.Contains(t, html, `if (e.basis) tip += ": " + e.basis;`)
 }

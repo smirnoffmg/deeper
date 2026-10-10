@@ -50,7 +50,7 @@ func TestBuildGraphReport_MapsNodesAndEdges(t *testing.T) {
 	}
 	parentID := int64(1)
 	edges := []database.TraceEdge{
-		{ParentTraceID: &parentID, ChildTraceID: 2, PluginName: "subdomain_finder"},
+		{ParentTraceID: &parentID, ChildTraceID: 2, PluginName: "subdomain_finder", Strength: entities.StrengthWeak, Basis: "search hit"},
 	}
 
 	reportNodes, reportEdges := buildGraphReport(nodes, edges)
@@ -60,7 +60,7 @@ func TestBuildGraphReport_MapsNodesAndEdges(t *testing.T) {
 		{ID: 2, Label: "leaf.root.com", Type: "subdomain"},
 	}, reportNodes)
 	assert.Equal(t, []graphreport.Edge{
-		{From: 1, To: 2, Label: "subdomain_finder"},
+		{From: 1, To: 2, Label: "subdomain_finder", Strength: "weak", Basis: "search hit"},
 	}, reportEdges)
 }
 

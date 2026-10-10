@@ -37,11 +37,14 @@ type Node struct {
 	Type  string `json:"type"`
 }
 
-// Edge is a directed graph edge; Label is the plugin that produced it.
+// Edge is a directed graph edge; Label is the plugin that produced it. Basis
+// is untrusted like Node.Label.
 type Edge struct {
-	From  int64  `json:"from"`
-	To    int64  `json:"to"`
-	Label string `json:"label"`
+	From     int64  `json:"from"`
+	To       int64  `json:"to"`
+	Label    string `json:"label"`
+	Strength string `json:"strength"`
+	Basis    string `json:"basis"`
 }
 
 type graphData struct {

@@ -152,7 +152,13 @@ func buildGraphReport(nodes []database.Trace, edges []database.TraceEdge) ([]gra
 		if e.ParentTraceID == nil {
 			continue
 		}
-		reportEdges = append(reportEdges, graphreport.Edge{From: *e.ParentTraceID, To: e.ChildTraceID, Label: e.PluginName})
+		reportEdges = append(reportEdges, graphreport.Edge{
+			From:     *e.ParentTraceID,
+			To:       e.ChildTraceID,
+			Label:    e.PluginName,
+			Strength: string(e.Strength),
+			Basis:    e.Basis,
+		})
 	}
 
 	return reportNodes, reportEdges

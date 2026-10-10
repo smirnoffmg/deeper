@@ -35,3 +35,15 @@ type ActivePlugin interface {
 type TraceMatcher interface {
 	Matches(trace entities.Trace) bool
 }
+
+type Finding struct {
+	Trace    entities.Trace
+	Strength entities.Strength
+	Basis    string
+}
+
+// EvidenceFollower is optional, like ActivePlugin/TraceMatcher. When a plugin
+// implements it, the processor calls it instead of FollowTrace.
+type EvidenceFollower interface {
+	FollowEvidence(ctx context.Context, trace entities.Trace) ([]Finding, error)
+}

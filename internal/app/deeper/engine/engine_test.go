@@ -236,3 +236,129 @@ func TestEngine_ProcessInput_MultiParentPersistence(t *testing.T) {
 	// seed edge + 2 parent→shared-child edges
 	assert.Equal(t, 3, count)
 }
+
+func TestEngine_ProcessInput_SeedEdgeIsProof(t *testing.T) {
+	eng, repo := setupEngine(t, plugins.Registry{})
+	session, err := repo.CreateScanSession("root")
+	require.NoError(t, err)
+
+	_, err = eng.ProcessInput(context.Background(), "root", session.ID)
+	require.NoError(t, err)
+
+	_, edges, err := repo.GetScanGraph(session.ID)
+	require.NoError(t, err)
+	require.Len(t, edges, 1)
+	assert.Nil(t, edges[0].ParentTraceID)
+	assert.Equal(t, entities.StrengthProof, edges[0].Strength)
+	assert.Equal(t, "seed", edges[0].Basis)
+}
+
+type evidencePlugin struct {
+	name     string
+	findings []plugins.Finding
+}
+
+func (p *evidencePlugin) FollowEvidence(_ context.Context, _ entities.Trace) ([]plugins.Finding, error) {
+	return p.findings, nil
+}
+
+func (p *evidencePlugin) FollowTrace(ctx context.Context, trace entities.Trace) ([]entities.Trace, error) {
+	findings, err := p.FollowEvidence(ctx, trace)
+	if err != nil {
+		return nil, err
+	}
+	var traces []entities.Trace
+	for _, f := range findings {
+		traces = append(traces, f.Trace)
+	}
+	return traces, nil
+}
+
+func (p *evidencePlugin) String() string {
+	return p.name
+}
+
+func TestEngine_ProcessInput_WeakAccountChildrenRecordedNotExpanded(t *testing.T) {
+	account := entities.Trace{Value: "https://example.org/alice", Type: entities.SocialGeneric}
+	company := entities.Trace{Value: "Namesake Corp", Type: entities.Company}
+	email := entities.Trace{Value: "alice@namesake-corp.com", Type: entities.Email}
+
+	run := func(t *testing.T, accountStrength entities.Strength) (companyCalled, emailCalled bool) {
+		t.Helper()
+		companyRecorder := &recordingPlugin{name: "company-recorder"}
+		emailRecorder := &recordingPlugin{name: "email-recorder"}
+		registry := plugins.Registry{
+			entities.Username: {&evidencePlugin{name: "sherlock-fake", findings: []plugins.Finding{
+				{Trace: account, Strength: accountStrength, Basis: "fake check"},
+			}}},
+			entities.SocialGeneric: {&chainProfilePlugin{name: "profile-fake", outputs: []entities.Trace{company, email}}},
+			entities.Company:       {companyRecorder},
+			entities.Email:         {emailRecorder},
+		}
+
+		eng, repo := setupEngine(t, registry)
+		session, err := repo.CreateScanSession("alice")
+		require.NoError(t, err)
+
+		traces, err := eng.ProcessInput(context.Background(), "alice", session.ID)
+		require.NoError(t, err)
+		assert.Contains(t, traces, account)
+		assert.Contains(t, traces, company)
+		assert.Contains(t, traces, email)
+
+		recorded, edges, err := repo.GetScanGraph(session.ID)
+		require.NoError(t, err)
+		var recordedTraces []entities.Trace
+		byID := map[int64]entities.Trace{}
+		for _, n := range recorded {
+			tr := entities.Trace{Value: n.Value, Type: n.Type}
+			recordedTraces = append(recordedTraces, tr)
+			byID[n.ID] = tr
+		}
+		assert.Contains(t, recordedTraces, company)
+		assert.Contains(t, recordedTraces, email)
+
+		var profileChildren []entities.Trace
+		var accountEdgeFound bool
+		for _, e := range edges {
+			switch e.PluginName {
+			case "profile-fake":
+				profileChildren = append(profileChildren, byID[e.ChildTraceID])
+			case "sherlock-fake":
+				accountEdgeFound = true
+				assert.Equal(t, account, byID[e.ChildTraceID])
+				assert.Equal(t, accountStrength, e.Strength)
+				assert.Equal(t, "fake check", e.Basis)
+			}
+		}
+		assert.True(t, accountEdgeFound, "the account edge must be persisted")
+		assert.ElementsMatch(t, []entities.Trace{company, email}, profileChildren)
+
+		return companyRecorder.called, emailRecorder.called
+	}
+
+	t.Run("weak account", func(t *testing.T) {
+		companyCalled, emailCalled := run(t, entities.StrengthWeak)
+		assert.False(t, companyCalled, "a child of a weak node must not be expanded")
+		assert.False(t, emailCalled, "a child of a weak node must not be expanded")
+	})
+
+	t.Run("strong account", func(t *testing.T) {
+		companyCalled, emailCalled := run(t, entities.StrengthStrong)
+		assert.True(t, companyCalled)
+		assert.True(t, emailCalled)
+	})
+}
+
+type chainProfilePlugin struct {
+	name    string
+	outputs []entities.Trace
+}
+
+func (p *chainProfilePlugin) FollowTrace(_ context.Context, _ entities.Trace) ([]entities.Trace, error) {
+	return p.outputs, nil
+}
+
+func (p *chainProfilePlugin) String() string {
+	return p.name
+}

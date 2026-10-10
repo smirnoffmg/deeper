@@ -276,3 +276,21 @@ func TestRepository_GetReachableTraces_HandlesCycle(t *testing.T) {
 	assert.Equal(t, 0, hopsByID[aID])
 	assert.Equal(t, 1, hopsByID[bID])
 }
+
+func TestRepository_GetScanGraph_RoundTripsStrengthAndBasis(t *testing.T) {
+	repo := newTestRepo(t)
+	scanID := newTestScan(t, repo)
+
+	root := entities.Trace{Value: "alice", Type: entities.Username}
+	account := entities.Trace{Value: "https://example.com/alice", Type: entities.SocialGeneric}
+
+	require.NoError(t, repo.PersistDiscoveries(scanID, []entities.Discovery{
+		{Parent: root, PluginName: "social_profiles", Child: account, Strength: entities.StrengthWeak, Basis: "sherlock status_code check"},
+	}))
+
+	_, edges, err := repo.GetScanGraph(scanID)
+	require.NoError(t, err)
+	require.Len(t, edges, 1)
+	assert.Equal(t, entities.StrengthWeak, edges[0].Strength)
+	assert.Equal(t, "sherlock status_code check", edges[0].Basis)
+}

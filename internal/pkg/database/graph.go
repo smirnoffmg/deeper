@@ -54,13 +54,15 @@ func (r *Repository) InsertEdge(edge *TraceEdge) error {
 	defer r.db.mu.Unlock()
 
 	_, err := r.db.db.Exec(
-		`INSERT OR IGNORE INTO trace_edges (parent_trace_id, child_trace_id, plugin_name, scan_id, discovered_at)
-		 VALUES (?, ?, ?, ?, ?)`,
+		`INSERT OR IGNORE INTO trace_edges (parent_trace_id, child_trace_id, plugin_name, scan_id, discovered_at, strength, basis)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		edge.ParentTraceID,
 		edge.ChildTraceID,
 		edge.PluginName,
 		edge.ScanID,
 		edge.DiscoveredAt,
+		edge.Strength,
+		edge.Basis,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to insert edge: %w", err)
@@ -136,9 +138,9 @@ func (r *Repository) PersistDiscoveries(scanID int64, discoveries []entities.Dis
 		}
 
 		_, err = tx.Exec(
-			`INSERT OR IGNORE INTO trace_edges (parent_trace_id, child_trace_id, plugin_name, scan_id, discovered_at)
-			 VALUES (?, ?, ?, ?, ?)`,
-			parentID, childID, d.PluginName, scanID, now,
+			`INSERT OR IGNORE INTO trace_edges (parent_trace_id, child_trace_id, plugin_name, scan_id, discovered_at, strength, basis)
+			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			parentID, childID, d.PluginName, scanID, now, d.Strength, d.Basis,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to insert edge: %w", err)
@@ -254,7 +256,7 @@ func (r *Repository) GetScanGraph(scanID int64) ([]Trace, []TraceEdge, error) {
 	defer r.db.mu.RUnlock()
 
 	edgeRows, err := r.db.db.Query(
-		`SELECT id, parent_trace_id, child_trace_id, plugin_name, scan_id, discovered_at
+		`SELECT id, parent_trace_id, child_trace_id, plugin_name, scan_id, discovered_at, strength, basis
 		 FROM trace_edges WHERE scan_id = ?`,
 		scanID,
 	)
@@ -267,7 +269,7 @@ func (r *Repository) GetScanGraph(scanID int64) ([]Trace, []TraceEdge, error) {
 	for edgeRows.Next() {
 		var edge TraceEdge
 		var parentID sql.NullInt64
-		if err := edgeRows.Scan(&edge.ID, &parentID, &edge.ChildTraceID, &edge.PluginName, &edge.ScanID, &edge.DiscoveredAt); err != nil {
+		if err := edgeRows.Scan(&edge.ID, &parentID, &edge.ChildTraceID, &edge.PluginName, &edge.ScanID, &edge.DiscoveredAt, &edge.Strength, &edge.Basis); err != nil {
 			return nil, nil, fmt.Errorf("failed to scan edge row: %w", err)
 		}
 		if parentID.Valid {

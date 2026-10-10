@@ -88,11 +88,21 @@ type Trace struct {
 	Type  TraceType
 }
 
+type Strength string
+
+const (
+	StrengthWeak   Strength = "weak"
+	StrengthStrong Strength = "strong"
+	StrengthProof  Strength = "proof"
+)
+
 // Discovery records a parent trace, the plugin that derived a child, and the child trace.
 type Discovery struct {
 	Parent     Trace
 	PluginName string
 	Child      Trace
+	Strength   Strength
+	Basis      string
 }
 
 func (t Trace) String() string {
