@@ -1,30 +1,82 @@
 # Deeper
 
-Deeper starts from one thing you already know — an email, a username, a domain, a company name — and grows it into a graph of everything that's provably connected to it.
+Deeper starts from one thing you already know — an email, a username, a domain, a company name — and grows it into a graph of everything that's provably connected to it. The hard part is not finding things. It's knowing which of them are true.
 
-## How it thinks
+## One scan, start to finish
 
-Everything Deeper knows is a **trace** — a single fact, typed and dated: an email address, a domain, an IP, a GitHub handle, a company name, a cryptographic key. Deeper never stores an opinion, only facts it can point back to a source for.
+The easiest way to show what that means is to point Deeper at its own author.
 
-Each trace gets handed to every plugin that knows how to do something useful with that *kind* of fact. A domain trace goes to the plugins that know how to look up WHOIS records, enumerate subdomains, or check certificate transparency logs. A username trace goes to the plugins that check code-hosting platforms, developer communities, and social networks. Whatever new facts those plugins turn up become new traces, which get handed to the plugins that know what to do with *them* — and so on, breadth-first, until the graph stops growing.
+### A handle
 
-A few things this approach is deliberately strict about:
+```bash
+deeper scan smirnoffmg
+```
 
-- **Nothing is asked twice.** Every (fact, source) pair is checked once and remembered, so re-running an investigation doesn't repeat work or hammer the same site again.
-- **No source gets hit harder than it can take.** Requests to each destination are paced independently, so one noisy plugin can't drown out the rest or get the whole investigation rate-limited.
-- **A guess is not a fact.** Where a source only tells you "this account might exist" (most social-network username checks fall into this bucket), Deeper treats that as weak evidence, not a discovery. Where a source can prove a connection — a cryptographically signed proof, a commit's real author metadata, a certificate's registered domain — Deeper follows that instead of a lookalike username. The tool has been tuned more than once specifically to stop trusting "the page returned 200" as proof of anything.
+Within a minute Deeper has checked the handle against about 480 sites and found it registered on a few dozen of them: Hugging Face, Docker Hub, TryHackMe, dev.to, Spotify, a Russian cycling forum, an airliner-spotting site. It has also found `github.com/smirnoffmg`, with a profile, two SSH keys and fifty-odd repositories behind it.
 
-The result is a graph, not a list: every trace has a parent it was discovered from and a reason it was kept, so you can always trace a fact backward to how Deeper found it.
+How many of those accounts belong to the same person? From the handle alone, nobody can say. A site answering "200 OK" for `/user/smirnoffmg` proves that *someone* took that name there, nothing more.
 
-## What it can find
+### The traps
 
-Starting from almost any single identifier, Deeper can grow a picture across five areas:
+Earlier versions of Deeper trusted what they found and kept digging. Every one of these happened on this very scan:
 
-- **Identity** — the real name, company, and role behind a username or email; company registry and legal-entity lookups; academic and professional publications.
-- **Verified social presence** — accounts confirmed to belong to the same person, not just accounts that share a username. This ranges from a broad existence sweep across hundreds of platforms to focused plugins for the platforms worth digging into properly, including ones that expose cryptographically verified links between accounts.
-- **Infrastructure** — the domains, subdomains, DNS records, IP ranges, and hosting footprint behind a company or website, discovered through certificate transparency, DNS enumeration, and WHOIS.
-- **Code footprint** — public repositories, commit history, and the real names and emails hiding behind commit authorship, including co-authors pulled in along the way.
-- **Contact surface** — emails surfaced from crawled pages and commit metadata, plus the SSH and PGP keys someone has published on their code-hosting profile.
+- **Bots became people.** Commit history named `dependabot[bot]` and `github-actions[bot]` as authors. Deeper treated them as usernames, swept them across every site it knows, and dutifully reported a "profile" for `dependabot[bot]` on Apple's discussion forums.
+- **Co-authors became aliases.** Commits carried `Co-authored-by: Claude Opus 4.8` and `Co-authored-by: Cursor`. Those name someone *else* who helped write a commit, but they came out looking like more names for the target.
+- **The platform became a name.** Commits made through GitHub's web editor are signed by `GitHub <noreply@github.com>`, so "GitHub" showed up as a person.
+- **A namesake became the target.** `github.com/<handle>` belongs to whoever registered it, not necessarily to the person who uses that handle elsewhere. One unlucky collision is enough to pull a stranger's employer, company registry entries and domains into the graph.
+
+None of these is a bug in a single plugin. They are the same mistake every time: treating a guess as a fact, and then building on it.
+
+### A guess is not a fact
+
+So every edge in Deeper's graph now says how much it proves, and why:
+
+| Strength | Meaning | Example basis |
+|---|---|---|
+| `proof` | the source binds the two by itself | the seed you typed, a DNS answer |
+| `strong` | an authoritative source asserts it | `commit author`, `repos of github.com/<login>` |
+| `weak` | existence or resemblance only | `sherlock status_code check`, `namesake: github.com/<login> exists`, `co-authored-by trailer` |
+
+A weak finding is recorded, never thrown away, but Deeper looks at it for exactly one more step and stops. The swept accounts are fetched and whatever their profiles say is kept, but none of it is followed further. Bots and the web-flow committer are dropped outright, because they are not people at all. In the HTML report weak edges are dashed, and hovering one tells you why it is there: `via SocialProfilesPlugin · weak: sherlock status_code check`.
+
+For the bare handle that leaves 93 traces, and only two of them are expanded: the handle itself and the GitHub account it *might* be.
+
+### Telling Deeper what you know
+
+If you know which account is the target's, say so:
+
+```bash
+deeper scan https://github.com/smirnoffmg
+```
+
+A seed is `proof`, so this time the whole chain opens. The account's repositories lead to commits, commits lead to the names and emails their author has used over the years, those emails lead to a Gravatar profile, and so on: 106 traces joined by 289 edges, of which 249 are strong, 39 weak and one, the seed, proof. The AI co-authors are still there, as weak edges with their reason attached. The bots are gone.
+
+### And a domain
+
+```bash
+deeper scan smirnoffmg.dev
+```
+
+Infrastructure is the easy case: DNS answers, certificate transparency logs and IP registries are authoritative about what they report. The scan finds Cloudflare nameservers, a CNAME to GitHub Pages and the GitHub CDN addresses behind it, the CAA records, the `www` host from the certificate logs: 34 traces, every edge strong.
+
+Strong is not the same as interesting, though. The zone's SOA record names `dns@cloudflare.com`, which is a true fact about the zone and says nothing about its owner. Telling relevant from merely true is the next problem, not one Deeper solves yet.
+
+## How it works
+
+Everything Deeper knows is a **trace**: a single typed fact such as an email address, a domain, an IP, a GitHub account, a company name or a key. Each trace goes to every plugin that knows what to do with that kind of fact, and whatever they find becomes new traces, breadth-first, until the graph stops growing. Every edge records its parent, the plugin that found it, its strength and its basis, so any fact can be traced back to how Deeper got there.
+
+- **Nothing is asked twice.** Every (fact, source) pair is checked once and remembered, so a re-run doesn't repeat work or hammer the same site.
+- **No source gets hit harder than it can take.** Requests to each destination are paced independently, so one noisy plugin can't get the whole investigation rate-limited.
+
+What it can reach from a single identifier:
+
+- **Identity**: the real name, company and role behind a username or email; company registries; academic publications.
+- **Social presence**: a broad existence sweep across hundreds of platforms, plus focused plugins for the platforms worth reading properly, including ones with cryptographically verified links between accounts.
+- **Infrastructure**: domains, subdomains, DNS records, IP ranges and hosting, via certificate transparency, DNS and WHOIS.
+- **Code footprint**: repositories, commit history and the names and emails behind commit authorship.
+- **Contact surface**: emails from crawled pages and commits, and the SSH and PGP keys published on a code-hosting profile.
+
+Architecture and performance-tuning notes live in [`docs/`](docs/), and design decisions in [`spec/`](spec/).
 
 ## Getting started
 
@@ -32,14 +84,12 @@ Starting from almost any single identifier, Deeper can grow a picture across fiv
 git clone https://github.com/smirnoffmg/deeper.git
 cd deeper
 make build
-./build/deeper scan <email | username | domain | company>
+./build/deeper scan <email | username | domain | company | https://github.com/<login>>
 ```
 
-A bare username only shows that *someone* registered that handle on a platform, so the accounts it reaches are weak evidence: Deeper records what they say but does not follow it further. If you know which GitHub account is the target's, seed it directly — `./build/deeper scan https://github.com/<login>` — and its profile, keys, repositories and commit authors are expanded in full.
+Set `DEEPER_GITHUB_TOKEN` to a GitHub token. Without it, GitHub's anonymous limit of 60 requests an hour runs out within a scan or two.
 
-Every scan also renders its trace graph to a self-contained, interactive HTML report (`~/.deeper/reports/scan-<id>.html`) and, for the default table output, opens it in your browser — pan, zoom, hover for details, click a trace to isolate its neighbors. Pass `--no-open` to skip the auto-open (e.g. in CI) without losing the saved report.
-
-Architecture and performance-tuning details live in [`docs/`](docs/) — this README is deliberately just the front door.
+Every scan renders its graph to a self-contained, interactive HTML report (`~/.deeper/reports/scan-<id>.html`) and, for the default table output, opens it in your browser: pan, zoom, hover for details, click a trace to isolate its neighbors. `--no-open` skips the browser without losing the report.
 
 ## MCP server
 
@@ -63,7 +113,7 @@ It registers three tools:
 
 ## Responsible use
 
-Deeper is built for legitimate OSINT research and authorized security testing. Make sure you have proper authorization before pointing it at any person, system, or organization you don't own.
+Deeper is built for legitimate OSINT research and authorized security testing. Make sure you have proper authorization before pointing it at any person, system, or organization you don't own. The examples above are the author's own accounts.
 
 By default a scan is **passive** — it only queries third-party sources (certificate logs, WHOIS, DNS, code-host APIs, archives) and never touches the target directly. Active-recon plugins that do contact the target — a TCP port scan, directory brute-forcing — run only when you pass `--active` (or set `DEEPER_ACTIVE_SCAN=true`). Use them only where your authorization covers active probing.
 
