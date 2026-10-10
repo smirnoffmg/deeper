@@ -286,3 +286,36 @@ func testPlugin(fetcher commitFetcher) *GitHubIdentityPlugin {
 }
 
 var _ commitFetcher = (*fakeCommitFetcher)(nil)
+
+const ownerWithCoAuthorCommitsJSON = `[{
+  "author": {"login": "smirnoffmg"},
+  "commit": {
+    "author": {"name": "Maksim Smirnov", "email": "smirnoffmg@gmail.com"},
+    "committer": {"name": "GitHub", "email": "noreply@github.com"},
+    "message": "feat\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>"
+  }
+}]`
+
+func TestFollowEvidence_OwnerStrongCoAuthorWeakNoSystemIdentity(t *testing.T) {
+	p := testPlugin(&fakeCommitFetcher{status: http.StatusOK, body: ownerWithCoAuthorCommitsJSON})
+
+	findings, err := p.FollowEvidence(context.Background(), entities.Trace{
+		Type:  entities.Github,
+		Value: "https://github.com/smirnoffmg/deeper",
+	})
+	require.NoError(t, err)
+
+	strengths := make(map[string]entities.Strength)
+	for _, f := range findings {
+		strengths[f.Trace.Value] = f.Strength
+	}
+	assert.Equal(t, map[string]entities.Strength{
+		"Maksim Smirnov":        entities.StrengthStrong,
+		"smirnoffmg@gmail.com":  entities.StrengthStrong,
+		"smirnoffmg":            entities.StrengthStrong,
+		"Claude Opus 4.8":       entities.StrengthWeak,
+		"noreply@anthropic.com": entities.StrengthWeak,
+	}, strengths)
+}
+
+var _ plugins.EvidenceFollower = (*GitHubIdentityPlugin)(nil)

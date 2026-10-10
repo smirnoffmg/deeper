@@ -28,6 +28,18 @@ func (p *GitHubIdentityPlugin) Register(r plugins.Registry) error {
 }
 
 func (p *GitHubIdentityPlugin) FollowTrace(ctx context.Context, trace entities.Trace) ([]entities.Trace, error) {
+	findings, err := p.FollowEvidence(ctx, trace)
+	if err != nil {
+		return nil, err
+	}
+	var traces []entities.Trace
+	for _, f := range findings {
+		traces = append(traces, f.Trace)
+	}
+	return traces, nil
+}
+
+func (p *GitHubIdentityPlugin) FollowEvidence(ctx context.Context, trace entities.Trace) ([]plugins.Finding, error) {
 	if trace.Type != entities.Github && trace.Type != entities.Repository {
 		return nil, nil
 	}
@@ -50,7 +62,7 @@ func (p *GitHubIdentityPlugin) FollowTrace(ctx context.Context, trace entities.T
 		return nil, nil
 	}
 
-	return authorsToTraces(authors), nil
+	return authorsToFindings(authors), nil
 }
 
 func (p *GitHubIdentityPlugin) String() string {

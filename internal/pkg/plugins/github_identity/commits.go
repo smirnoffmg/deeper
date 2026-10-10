@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 )
 
 type commitFetcher interface {
@@ -21,6 +22,11 @@ type commitAuthor struct {
 	Name  string
 	Email string
 	Login string
+	// CoAuthor marks an identity named only by a Co-authored-by trailer: the
+	// trailer credits someone else, so it relates them to the repo without
+	// showing they are the owner.
+	CoAuthor bool
+	Bot      bool
 }
 
 func parseOwnerRepo(githubURL string) (owner, repo string, ok bool) {
@@ -145,8 +151,9 @@ func parseCoAuthors(message string) []commitAuthor {
 	authors := make([]commitAuthor, 0, len(matches))
 	for _, m := range matches {
 		authors = append(authors, commitAuthor{
-			Name:  strings.TrimSpace(m[1]),
-			Email: strings.TrimSpace(m[2]),
+			Name:     strings.TrimSpace(m[1]),
+			Email:    strings.TrimSpace(m[2]),
+			CoAuthor: true,
 		})
 	}
 	return authors
@@ -156,7 +163,11 @@ func parseCommitAuthors(body []byte) []commitAuthor {
 	var raw []struct {
 		Author *struct {
 			Login string `json:"login"`
+			Type  string `json:"type"`
 		} `json:"author"`
+		Committer *struct {
+			Type string `json:"type"`
+		} `json:"committer"`
 		Commit struct {
 			Author struct {
 				Name  string `json:"name"`
@@ -181,6 +192,7 @@ func parseCommitAuthors(body []byte) []commitAuthor {
 		}
 		if item.Author != nil {
 			author.Login = strings.TrimSpace(item.Author.Login)
+			author.Bot = item.Author.Type == "Bot"
 		}
 		if author.Name != "" || author.Email != "" || author.Login != "" {
 			authors = append(authors, author)
@@ -189,6 +201,7 @@ func parseCommitAuthors(body []byte) []commitAuthor {
 		committer := commitAuthor{
 			Name:  strings.TrimSpace(item.Commit.Committer.Name),
 			Email: strings.TrimSpace(item.Commit.Committer.Email),
+			Bot:   item.Committer != nil && item.Committer.Type == "Bot",
 		}
 		if committer.Name != "" || committer.Email != "" {
 			authors = append(authors, committer)
@@ -196,7 +209,42 @@ func parseCommitAuthors(body []byte) []commitAuthor {
 
 		authors = append(authors, parseCoAuthors(item.Commit.Message)...)
 	}
-	return authors
+	return dropNonPersons(authors)
+}
+
+var (
+	botNoreplyEmail     = regexp.MustCompile(`(?i)\[bot\]@users\.noreply\.github\.com$`)
+	copilotNoreplyEmail = regexp.MustCompile(`(?i)^\d+\+copilot@users\.noreply\.github\.com$`)
+)
+
+var automationEmails = map[string]bool{
+	"noreply@github.com":        true,
+	"action@github.com":         true,
+	"github-actions@github.com": true,
+}
+
+// isNonPerson reports GitHub's own web-flow committer and app/bot accounts.
+// Left in, their names and logins become Username/Name traces and get swept
+// across every site Sherlock knows.
+func isNonPerson(a commitAuthor) bool {
+	if a.Bot || automationEmails[strings.ToLower(a.Email)] {
+		return true
+	}
+	if botNoreplyEmail.MatchString(a.Email) || copilotNoreplyEmail.MatchString(a.Email) {
+		return true
+	}
+	return strings.HasSuffix(strings.ToLower(a.Login), "[bot]") ||
+		strings.HasSuffix(strings.ToLower(a.Name), "[bot]")
+}
+
+func dropNonPersons(authors []commitAuthor) []commitAuthor {
+	var kept []commitAuthor
+	for _, a := range authors {
+		if !isNonPerson(a) {
+			kept = append(kept, a)
+		}
+	}
+	return kept
 }
 
 // maxDistinctContributors bounds how many distinct people a repo's commit
@@ -252,29 +300,36 @@ func identityKey(a commitAuthor) string {
 	}
 }
 
-func authorsToTraces(authors []commitAuthor) []entities.Trace {
-	seen := make(map[string]struct{})
-	var traces []entities.Trace
+func authorsToFindings(authors []commitAuthor) []plugins.Finding {
+	index := make(map[entities.Trace]int)
+	var findings []plugins.Finding
 
-	addTrace := func(traceType entities.TraceType, value string) {
+	add := func(traceType entities.TraceType, value string, strength entities.Strength, basis string) {
 		if value == "" {
 			return
 		}
-		key := string(traceType) + "\x00" + value
-		if _, ok := seen[key]; ok {
+		trace := entities.Trace{Type: traceType, Value: value}
+		if i, ok := index[trace]; ok {
+			if findings[i].Strength == entities.StrengthWeak && strength != entities.StrengthWeak {
+				findings[i].Strength, findings[i].Basis = strength, basis
+			}
 			return
 		}
-		seen[key] = struct{}{}
-		traces = append(traces, entities.Trace{Type: traceType, Value: value})
+		index[trace] = len(findings)
+		findings = append(findings, plugins.Finding{Trace: trace, Strength: strength, Basis: basis})
 	}
 
 	for _, author := range authors {
-		addTrace(entities.Name, author.Name)
-		if entities.IsRealEmail(author.Email) {
-			addTrace(entities.Email, author.Email)
+		strength, basis := entities.StrengthStrong, "commit author"
+		if author.CoAuthor {
+			strength, basis = entities.StrengthWeak, "co-authored-by trailer"
 		}
-		addTrace(entities.Username, author.Login)
+		add(entities.Name, author.Name, strength, basis)
+		if entities.IsRealEmail(author.Email) {
+			add(entities.Email, author.Email, strength, basis)
+		}
+		add(entities.Username, author.Login, strength, basis)
 	}
 
-	return traces
+	return findings
 }

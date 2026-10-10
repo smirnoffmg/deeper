@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/smirnoffmg/deeper/internal/pkg/entities"
+	"github.com/smirnoffmg/deeper/internal/pkg/plugins"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -113,7 +114,7 @@ func TestParseCommitAuthors_CommitterDiffersFromAuthor(t *testing.T) {
 }
 
 func TestParseCommitAuthors_IdenticalCommitterIsStillEmitted(t *testing.T) {
-	// authorsToTraces already dedupes downstream by type+value, so
+	// authorsToFindings already dedupes downstream by type+value, so
 	// parseCommitAuthors doesn't need its own identity check here.
 	body := []byte(`[{
 		"commit": {
@@ -156,21 +157,21 @@ func TestParseCoAuthors(t *testing.T) {
 		{
 			name:    "single trailer",
 			message: "Fix bug\n\nCo-authored-by: Serge Matveenko <s@matveenko.ru>",
-			want:    []commitAuthor{{Name: "Serge Matveenko", Email: "s@matveenko.ru"}},
+			want:    []commitAuthor{{Name: "Serge Matveenko", Email: "s@matveenko.ru", CoAuthor: true}},
 		},
 		{
 			name: "multiple trailers",
 			message: "Fix bug\n\nCo-authored-by: A One <a@example.com>\n" +
 				"Co-authored-by: B Two <b@example.com>",
 			want: []commitAuthor{
-				{Name: "A One", Email: "a@example.com"},
-				{Name: "B Two", Email: "b@example.com"},
+				{Name: "A One", Email: "a@example.com", CoAuthor: true},
+				{Name: "B Two", Email: "b@example.com", CoAuthor: true},
 			},
 		},
 		{
 			name:    "case-insensitive prefix",
 			message: "Fix bug\n\nco-authored-by: A One <a@example.com>",
-			want:    []commitAuthor{{Name: "A One", Email: "a@example.com"}},
+			want:    []commitAuthor{{Name: "A One", Email: "a@example.com", CoAuthor: true}},
 		},
 		{
 			name:    "no trailer",
@@ -246,17 +247,18 @@ func TestFilterAuthorsForSharedRepo_OwnerMatchIsCaseInsensitive(t *testing.T) {
 	assert.Equal(t, "Iloncka", filtered[0].Login)
 }
 
-func TestAuthorsToTraces(t *testing.T) {
+func TestAuthorsToFindings(t *testing.T) {
 	authors := []commitAuthor{
 		{Name: "Alexey Smirnov", Email: "alex@smirnov.dev", Login: "alsmirn"},
 		{Name: "Alexey Smirnov", Email: "alex@smirnov.dev", Login: "alsmirn"},
 		{Name: "Bot User", Email: "bot@ci.dev"},
 	}
 
-	traces := authorsToTraces(authors)
+	findings := authorsToFindings(authors)
 
 	names, emails, usernames := 0, 0, 0
-	for _, tr := range traces {
+	for _, f := range findings {
+		tr := f.Trace
 		switch tr.Type {
 		case entities.Name:
 			names++
@@ -275,26 +277,171 @@ func TestAuthorsToTraces(t *testing.T) {
 // Regression: git falls back to placeholder addresses like "you@example.com"
 // when a contributor never configures user.email. These are syntactically
 // valid emails but never real contact info, so they must not become traces.
-func TestAuthorsToTraces_PlaceholderEmailRejected(t *testing.T) {
+func TestAuthorsToFindings_PlaceholderEmailRejected(t *testing.T) {
 	authors := []commitAuthor{
 		{Name: "Someone", Email: "you@example.com", Login: "someone"},
 	}
 
-	traces := authorsToTraces(authors)
+	findings := authorsToFindings(authors)
 
-	for _, tr := range traces {
+	for _, f := range findings {
+		tr := f.Trace
 		assert.NotEqual(t, entities.Email, tr.Type, "placeholder email must not become a trace")
 	}
 }
 
-func TestAuthorsToTraces_MalformedEmailRejected(t *testing.T) {
+func TestAuthorsToFindings_MalformedEmailRejected(t *testing.T) {
 	authors := []commitAuthor{
 		{Name: "Someone", Email: "not-an-email", Login: "someone"},
 	}
 
-	traces := authorsToTraces(authors)
+	findings := authorsToFindings(authors)
 
-	for _, tr := range traces {
+	for _, f := range findings {
+		tr := f.Trace
 		assert.NotEqual(t, entities.Email, tr.Type, "malformed email must not become a trace")
+	}
+}
+
+func TestParseCommitAuthors_DropsWebFlowCommitter(t *testing.T) {
+	body := []byte(`[{
+		"author": {"login": "smirnoffmg"},
+		"commit": {
+			"author": {"name": "Maksim Smirnov", "email": "smirnoffmg@gmail.com"},
+			"committer": {"name": "GitHub", "email": "noreply@github.com"},
+			"message": "Merge pull request #1"
+		}
+	}]`)
+
+	authors := parseCommitAuthors(body)
+
+	require.Len(t, authors, 1)
+	assert.Equal(t, "Maksim Smirnov", authors[0].Name)
+}
+
+func TestParseCommitAuthors_DropsBotIdentities(t *testing.T) {
+	body := []byte(`[
+		{
+			"author": {"login": "dependabot[bot]"},
+			"commit": {
+				"author": {"name": "dependabot[bot]", "email": "49699333+dependabot[bot]@users.noreply.github.com"},
+				"committer": {"name": "GitHub", "email": "noreply@github.com"},
+				"message": "Bump x\n\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
+			}
+		},
+		{
+			"commit": {
+				"author": {"name": "Renovate Bot", "email": "29139614+renovate[bot]@users.noreply.github.com"},
+				"committer": {"name": "github-actions[bot]", "email": "actions@example.org"},
+				"message": "chore"
+			}
+		}
+	]`)
+
+	assert.Empty(t, parseCommitAuthors(body))
+}
+
+func TestParseCommitAuthors_DropsAutomationWithoutBotMarker(t *testing.T) {
+	body := []byte(`[
+		{
+			"author": {"login": "Copilot", "type": "Bot"},
+			"committer": {"login": "Copilot", "type": "Bot"},
+			"commit": {
+				"author": {"name": "Copilot", "email": "198982749+Copilot@users.noreply.github.com"},
+				"committer": {"name": "Copilot", "email": "198982749+Copilot@users.noreply.github.com"},
+				"message": "Fix tests"
+			}
+		},
+		{
+			"author": {"login": "smirnoffmg", "type": "User"},
+			"commit": {
+				"author": {"name": "Maksim Smirnov", "email": "smirnoffmg@gmail.com"},
+				"committer": {"name": "GitHub Action", "email": "action@github.com"},
+				"message": "Update\n\nCo-authored-by: Copilot <175728472+Copilot@users.noreply.github.com>"
+			}
+		},
+		{
+			"commit": {
+				"author": {"name": "github-actions", "email": "github-actions@github.com"},
+				"committer": {"name": "github-actions", "email": "github-actions@github.com"},
+				"message": "Release"
+			}
+		}
+	]`)
+
+	authors := parseCommitAuthors(body)
+
+	require.Len(t, authors, 1)
+	assert.Equal(t, "Maksim Smirnov", authors[0].Name)
+}
+
+func TestParseCommitAuthors_BotsDoNotMakeRepoShared(t *testing.T) {
+	commit := func(login string) string {
+		return `{"author": {"login": "` + login + `[bot]"}, "commit": {"author": {"name": "` + login + `[bot]", "email": "1+` + login + `[bot]@users.noreply.github.com"}, "committer": {"name": "GitHub", "email": "noreply@github.com"}, "message": "bump"}}`
+	}
+	body := []byte(`[
+		{"author": {"login": "alice"}, "commit": {"author": {"name": "Alice", "email": "alice@example.com"}, "committer": {"name": "Bob", "email": "bob@example.com"}, "message": "init"}},
+		` + commit("dependabot") + `, ` + commit("renovate") + `, ` + commit("github-actions") + `,
+		` + commit("pre-commit-ci") + `, ` + commit("codecov") + `
+	]`)
+
+	authors := filterAuthorsForSharedRepo(parseCommitAuthors(body), "alice")
+
+	assert.ElementsMatch(t, []commitAuthor{
+		{Name: "Alice", Email: "alice@example.com", Login: "alice"},
+		{Name: "Bob", Email: "bob@example.com"},
+	}, authors)
+}
+
+func TestParseCommitAuthors_CoAuthorIsMarked(t *testing.T) {
+	body := []byte(`[{
+		"author": {"login": "smirnoffmg"},
+		"commit": {
+			"author": {"name": "Maksim Smirnov", "email": "smirnoffmg@gmail.com"},
+			"message": "feat\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>"
+		}
+	}]`)
+
+	authors := parseCommitAuthors(body)
+
+	require.Len(t, authors, 2)
+	assert.False(t, authors[0].CoAuthor)
+	assert.True(t, authors[1].CoAuthor)
+}
+
+func TestAuthorsToFindings_CoAuthorWeakAuthorStrong(t *testing.T) {
+	authors := []commitAuthor{
+		{Name: "Maksim Smirnov", Email: "smirnoffmg@gmail.com", Login: "smirnoffmg"},
+		{Name: "Cursor", Email: "cursoragent@cursor.com", CoAuthor: true},
+	}
+
+	findings := authorsToFindings(authors)
+
+	byValue := make(map[string]plugins.Finding)
+	for _, f := range findings {
+		byValue[f.Trace.Value] = f
+	}
+	require.Len(t, byValue, 5)
+	for _, v := range []string{"Maksim Smirnov", "smirnoffmg@gmail.com", "smirnoffmg"} {
+		assert.Equal(t, entities.StrengthStrong, byValue[v].Strength, v)
+		assert.Equal(t, "commit author", byValue[v].Basis, v)
+	}
+	for _, v := range []string{"Cursor", "cursoragent@cursor.com"} {
+		assert.Equal(t, entities.StrengthWeak, byValue[v].Strength, v)
+		assert.Equal(t, "co-authored-by trailer", byValue[v].Basis, v)
+	}
+}
+
+func TestAuthorsToFindings_AuthorSeenAfterCoAuthorIsStrong(t *testing.T) {
+	authors := []commitAuthor{
+		{Name: "Serge Matveenko", Email: "s@matveenko.ru", CoAuthor: true},
+		{Name: "Serge Matveenko", Email: "s@matveenko.ru"},
+	}
+
+	findings := authorsToFindings(authors)
+
+	require.Len(t, findings, 2)
+	for _, f := range findings {
+		assert.Equal(t, entities.StrengthStrong, f.Strength, f.Trace.Value)
 	}
 }
